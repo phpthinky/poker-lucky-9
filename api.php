@@ -3,6 +3,10 @@
  * Lucky Puffin - API (Shared Round System)
  * All players bet on the same cards!
  */
+if (!isset($_SERVER['HTTP_REFERER']) || strpos($_SERVER['HTTP_REFERER'], 'democodes.online') === false) {
+    http_response_code(403);
+    exit('Forbidden');
+}
 
 require_once 'config.php';
 require_once 'Player.php';

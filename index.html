@@ -1,0 +1,1269 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Lucky Puffin - World Puffin (WPUFF) LIVE</title>
+    
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.0/font/bootstrap-icons.css">
+    
+    <style>
+        :root {
+            --primary-blue: #0d6efd;
+            --success-green: #198754;
+            --danger-red: #dc3545;
+            --warning-yellow: #ffc107;
+            --info-cyan: #0dcaf0;
+            --puffin-purple: #667eea;
+            --puffin-dark: #764ba2;
+        }
+
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            background: linear-gradient(135deg, var(--puffin-purple) 0%, var(--puffin-dark) 100%);
+            min-height: 100vh;
+            overflow-x: hidden;
+            font-size: 14px;
+            position: relative;
+        }
+
+        .container {
+            padding: 5px 10px;
+            max-width: 100%;
+        }
+
+        /* Puffin Cloud Background */
+        .puffin-clouds {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            pointer-events: none;
+            z-index: 0;
+            opacity: 0.1;
+        }
+
+        .cloud {
+            position: absolute;
+            background: white;
+            border-radius: 100px;
+            opacity: 0.3;
+            animation: float 20s infinite ease-in-out;
+        }
+
+        .cloud-1 { width: 80px; height: 30px; top: 10%; left: -80px; animation-delay: 0s; }
+        .cloud-2 { width: 60px; height: 25px; top: 30%; left: -60px; animation-delay: 5s; }
+        .cloud-3 { width: 70px; height: 28px; top: 50%; left: -70px; animation-delay: 10s; }
+
+        @keyframes float {
+            0%, 100% { transform: translateX(0); }
+            50% { transform: translateX(calc(100vw + 100px)); }
+        }
+
+        .top-bar {
+            background: rgba(0,0,0,0.85);
+            color: #fff;
+            padding: 8px 10px;
+            margin-bottom: 8px;
+            border-radius: 8px;
+            position: relative;
+            z-index: 1;
+        }
+
+        .top-bar-row {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 5px;
+        }
+
+        .top-bar-row:last-child {
+            margin-bottom: 0;
+        }
+
+        .player-info {
+            display: flex;
+            align-items: center;
+            gap: 5px;
+            font-size: 0.85rem;
+        }
+
+        .balance-chip {
+            background: linear-gradient(135deg, #ffd700, #ffed4e);
+            color: #000;
+            padding: 4px 10px;
+            border-radius: 15px;
+            font-weight: bold;
+            font-size: 0.9rem;
+            display: flex;
+            align-items: center;
+            gap: 4px;
+        }
+
+        .wpuff-logo {
+            font-size: 0.75rem;
+            opacity: 0.8;
+        }
+
+        .live-indicator {
+            background: #ff0000;
+            color: #fff;
+            padding: 2px 8px;
+            border-radius: 10px;
+            font-size: 0.7rem;
+            font-weight: bold;
+            animation: livePulse 2s infinite;
+        }
+
+        @keyframes livePulse {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.6; }
+        }
+
+        .active-players {
+            background: rgba(0,0,0,0.7);
+            color: #ffd700;
+            padding: 5px 10px;
+            border-radius: 6px;
+            font-size: 0.75rem;
+            margin-bottom: 5px;
+            text-align: center;
+        }
+
+        .activity-feed {
+            background: rgba(0,0,0,0.6);
+            border-radius: 6px;
+            padding: 5px 8px;
+            margin-bottom: 5px;
+            max-height: 60px;
+            overflow-y: auto;
+        }
+
+        .activity-item {
+            color: #fff;
+            font-size: 0.7rem;
+            margin: 2px 0;
+        }
+
+        .activity-item.won {
+            color: #00ff00;
+        }
+
+        .activity-item.lost {
+            color: #ff6b6b;
+        }
+
+        .betting-box {
+            cursor: pointer;
+            min-height: 55px;
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            border: 2px solid transparent;
+            transition: all 0.3s ease;
+            position: relative;
+            overflow: hidden;
+            padding: 5px;
+        }
+
+        .betting-box:hover {
+            transform: scale(1.02);
+            box-shadow: 0 4px 12px rgba(0,0,0,0.3);
+        }
+
+        .betting-box.selected {
+            border-color: #ffd700;
+            box-shadow: 0 0 15px rgba(255,215,0,0.5);
+        }
+
+        .betting-box.disabled {
+            opacity: 0.4;
+            cursor: not-allowed;
+            pointer-events: none;
+        }
+
+        .betting-box h6 {
+            margin: 0;
+            font-weight: bold;
+            text-shadow: 1px 1px 2px rgba(0,0,0,0.3);
+            font-size: 0.8rem;
+        }
+
+        .betting-box p {
+            margin: 2px 0 0 0;
+            font-size: 0.7rem;
+            line-height: 1.2;
+        }
+
+        .chip-btn {
+            width: 50px;
+            height: 50px;
+            border-radius: 50%;
+            border: 2px solid #fff;
+            font-weight: bold;
+            font-size: 0.85rem;
+            transition: all 0.2s ease;
+            box-shadow: 0 3px 6px rgba(0,0,0,0.3);
+        }
+
+        .chip-btn:hover {
+            transform: scale(1.1);
+        }
+
+        .chip-btn.active {
+            border-color: #ffd700;
+            background-color: #ffd700 !important;
+            color: #000 !important;
+            transform: scale(1.15);
+            box-shadow: 0 4px 10px rgba(255,215,0,0.5);
+        }
+
+        .chip-10 { background: linear-gradient(135deg, #ff6b6b, #ee5a6f); color: #fff; }
+        .chip-50 { background: linear-gradient(135deg, #4ecdc4, #44a08d); color: #fff; }
+        .chip-100 { background: linear-gradient(135deg, #f093fb, #f5576c); color: #fff; }
+        .chip-500 { background: linear-gradient(135deg, #a29bfe, #6c5ce7); color: #fff; }
+
+        #bet-timer {
+            background: linear-gradient(135deg, #f093fb, #f5576c);
+            color: #fff;
+            font-weight: bold;
+            font-size: 0.95rem;
+            border: none;
+            box-shadow: 0 3px 6px rgba(0,0,0,0.3);
+            padding: 8px;
+            margin: 8px 0;
+        }
+
+        #bet-timer.warning {
+            animation: timerPulse 1s ease-in-out infinite;
+        }
+
+        @keyframes timerPulse {
+            0%, 100% { transform: scale(1); }
+            50% { transform: scale(1.03); }
+        }
+
+        .card-dealing-overlay {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(0,0,0,0.95);
+            display: none;
+            align-items: center;
+            justify-content: center;
+            z-index: 9998;
+            flex-direction: column;
+        }
+
+        .card-dealing-overlay.active {
+            display: flex;
+        }
+
+        .dealing-container {
+            text-align: center;
+            width: 90%;
+            max-width: 500px;
+        }
+
+        .dealing-title {
+            color: #ffd700;
+            font-size: 1.3rem;
+            font-weight: bold;
+            margin-bottom: 20px;
+            text-shadow: 2px 2px 4px rgba(0,0,0,0.5);
+        }
+
+        .hands-display {
+            display: flex;
+            justify-content: space-around;
+            gap: 15px;
+            margin-bottom: 20px;
+        }
+
+        .hand {
+            background: rgba(255,255,255,0.1);
+            border: 2px solid rgba(255,255,255,0.3);
+            border-radius: 10px;
+            padding: 15px 10px;
+            text-align: center;
+            flex: 1;
+        }
+
+        .hand-label {
+            color: #ffd700;
+            font-weight: bold;
+            margin-bottom: 10px;
+            font-size: 0.85rem;
+        }
+
+        .hand-cards {
+            display: flex;
+            justify-content: center;
+            gap: 5px;
+            min-height: 80px;
+            align-items: center;
+            flex-wrap: wrap;
+        }
+
+        .card-placeholder {
+            width: 45px;
+            height: 65px;
+            background: #fff;
+            border: 2px solid #333;
+            border-radius: 5px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-weight: bold;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.3);
+            font-size: 0.9rem;
+            animation: puffIn 0.5s ease-out;
+        }
+
+        @keyframes puffIn {
+            0% {
+                transform: scale(0);
+                opacity: 0;
+            }
+            50% {
+                transform: scale(1.3);
+            }
+            100% {
+                transform: scale(1);
+                opacity: 1;
+            }
+        }
+
+        .hand-total {
+            color: #fff;
+            font-weight: bold;
+            margin-top: 8px;
+            font-size: 1rem;
+        }
+
+        .control-buttons {
+            margin: 8px 0;
+            display: flex;
+            gap: 8px;
+            flex-wrap: wrap;
+        }
+
+        .btn-game {
+            flex: 1;
+            min-width: 100px;
+            padding: 10px;
+            font-size: 0.9rem;
+            font-weight: bold;
+            border-radius: 20px;
+            border: none;
+            transition: all 0.3s ease;
+        }
+
+        .btn-place-bet {
+            background: linear-gradient(135deg, #00c853, #00e676);
+            color: #fff;
+        }
+
+        .btn-place-bet:hover:not(:disabled) {
+            transform: translateY(-2px);
+            box-shadow: 0 4px 10px rgba(0,200,83,0.4);
+        }
+
+        .btn-place-bet:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+        }
+
+        .btn-clear {
+            background: linear-gradient(135deg, #ff6b6b, #ee5a6f);
+            color: #fff;
+        }
+
+        .leaderboard-section {
+            margin-top: 10px;
+            padding: 8px 0;
+        }
+
+        .leaderboard-title {
+            color: #ffd700;
+            font-size: 0.85rem;
+            font-weight: bold;
+            text-align: center;
+            margin-bottom: 8px;
+            text-shadow: 1px 1px 2px rgba(0,0,0,0.5);
+        }
+
+        .leaderboard {
+            display: flex;
+            overflow-x: auto;
+            gap: 8px;
+            padding: 5px 0;
+        }
+
+        .leaderboard .card {
+            min-width: 70px;
+            border: 2px solid rgba(255,255,255,0.3);
+            background: rgba(255,255,255,0.9);
+            box-shadow: 0 3px 6px rgba(0,0,0,0.2);
+            flex-shrink: 0;
+        }
+
+        .leaderboard .card.playing {
+            border-color: #00ff00;
+            box-shadow: 0 0 15px rgba(0,255,0,0.5);
+            animation: playingPulse 1.5s infinite;
+        }
+
+        @keyframes playingPulse {
+            0%, 100% { transform: scale(1); }
+            50% { transform: scale(1.05); }
+        }
+
+        .leaderboard .rank-badge {
+            position: absolute;
+            top: -5px;
+            right: -5px;
+            background: #ffd700;
+            color: #000;
+            border-radius: 50%;
+            width: 22px;
+            height: 22px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-weight: bold;
+            font-size: 0.7rem;
+            border: 2px solid #fff;
+        }
+
+        .result-overlay {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(0,0,0,0.95);
+            display: none;
+            align-items: center;
+            justify-content: center;
+            z-index: 9999;
+        }
+
+        .result-overlay.active {
+            display: flex;
+        }
+
+        .result-message {
+            background: #fff;
+            padding: 25px;
+            border-radius: 15px;
+            text-align: center;
+            max-width: 85%;
+            box-shadow: 0 10px 30px rgba(0,0,0,0.5);
+            animation: puffIn 0.6s ease-out;
+        }
+
+        .result-message.win {
+            border: 4px solid #00ff00;
+        }
+
+        .result-message.loss {
+            border: 4px solid #ff0000;
+        }
+
+        .result-message h2 {
+            font-size: 1.4rem;
+            margin-bottom: 15px;
+        }
+
+        .result-message p {
+            font-size: 1.1rem;
+            margin-bottom: 15px;
+        }
+
+        .game-info {
+            background: rgba(0,0,0,0.7);
+            color: #fff;
+            padding: 6px 8px;
+            border-radius: 6px;
+            font-size: 0.7rem;
+            margin-top: 10px;
+        }
+
+        .loading-spinner {
+            position: fixed;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            z-index: 10000;
+            display: none;
+        }
+
+        .loading-spinner.active {
+            display: block;
+        }
+
+        .winning-highlight {
+            animation: winPulse 0.8s ease-in-out 3;
+        }
+
+        @keyframes winPulse {
+            0%, 100% { box-shadow: 0 0 0 rgba(0,255,0,0.5); }
+            50% { box-shadow: 0 0 30px rgba(0,255,0,0.8); }
+        }
+
+        .chip-label {
+            color: #fff;
+            font-size: 0.75rem;
+            text-align: center;
+            margin-bottom: 5px;
+            text-shadow: 1px 1px 2px rgba(0,0,0,0.5);
+        }
+
+        @media (max-width: 360px) {
+            .betting-box { min-height: 50px; }
+            .chip-btn { width: 45px; height: 45px; font-size: 0.75rem; }
+            .betting-box h6 { font-size: 0.75rem; }
+            .betting-box p { font-size: 0.65rem; }
+        }
+
+        .puffin-icon::before {
+            content: "🐧";
+            margin-right: 3px;
+        }
+    </style>
+</head>
+<body>
+
+<div class="puffin-clouds">
+    <div class="cloud cloud-1"></div>
+    <div class="cloud cloud-2"></div>
+    <div class="cloud cloud-3"></div>
+</div>
+
+<div class="container">
+
+    <div class="top-bar">
+        <div class="top-bar-row">
+            <div class="player-info">
+                <i class="bi bi-person-circle"></i>
+                <span id="username">Loading...</span>
+            </div>
+            <div style="display: flex; gap: 5px; align-items: center;">
+                <span class="live-indicator">🔴 LIVE</span>
+                <button class="btn btn-sm btn-danger" id="exit-btn" style="padding: 2px 8px; font-size: 0.8rem;">
+                    <i class="bi bi-box-arrow-right"></i>
+                </button>
+            </div>
+        </div>
+        <div class="top-bar-row">
+            <div class="balance-chip">
+                <span class="puffin-icon"></span>
+                <span id="balance">0</span>
+                <span class="wpuff-logo">WPUFF</span>
+            </div>
+            <div id="round-winnings" style="color: #00ff00; font-size: 0.85rem; font-weight: bold; display: none;">
+                +<span id="winnings-amount">0</span> WPUFF
+            </div>
+        </div>
+    </div>
+
+    <div class="active-players" id="active-players">
+        <i class="bi bi-people-fill"></i> <span id="player-count">0</span> players betting
+    </div>
+
+    <div class="activity-feed" id="activity-feed">
+        <div class="activity-item" style="opacity: 0.5;">Recent activity will appear here...</div>
+    </div>
+
+    <div class="row mb-1">
+        <div class="col-12">
+            <div class="card text-center text-white bg-warning p-2 betting-box" id="bet-tie" data-bet-type="tie">
+                <h6><i class="bi bi-arrow-left-right"></i> TIE</h6>
+                <p class="mb-0">8:1 | <span class="bet-amount fw-bold" id="tie-total">0</span></p>
+            </div>
+        </div>
+    </div>
+
+    <div class="row mb-1 g-1">
+        <div class="col-6">
+            <div class="card text-center text-white p-2 betting-box" id="bet-player" data-bet-type="player" style="background: var(--primary-blue);">
+                <h6><i class="bi bi-person-fill"></i> PLAYER</h6>
+                <p class="mb-0">1:1<br><span class="bet-amount fw-bold" id="player-total">0</span></p>
+            </div>
+        </div>
+        <div class="col-6">
+            <div class="card text-center text-white p-2 betting-box" id="bet-player-pair" data-bet-type="playerPair" style="background: var(--success-green);">
+                <h6><i class="bi bi-grid-3x3"></i> PLAYER PAIR</h6>
+                <p class="mb-0">11:1<br><span class="bet-amount fw-bold" id="player-pair-total">0</span></p>
+            </div>
+        </div>
+    </div>
+
+    <div class="row mb-1 g-1">
+        <div class="col-6">
+            <div class="card text-center text-white p-2 betting-box" id="bet-banker" data-bet-type="banker" style="background: var(--danger-red);">
+                <h6><i class="bi bi-bank"></i> BANKER</h6>
+                <p class="mb-0">1:1<br><span class="bet-amount fw-bold" id="banker-total">0</span></p>
+            </div>
+        </div>
+        <div class="col-6">
+            <div class="card text-center text-white p-2 betting-box" id="bet-banker-pair" data-bet-type="bankerPair" style="background: var(--info-cyan);">
+                <h6><i class="bi bi-grid-3x3"></i> BANKER PAIR</h6>
+                <p class="mb-0">11:1<br><span class="bet-amount fw-bold" id="banker-pair-total">0</span></p>
+            </div>
+        </div>
+    </div>
+
+    <div class="chip-label">Select chip amount:</div>
+    <div class="row mb-1 text-center g-1">
+        <div class="col-3">
+            <button class="chip-btn chip-10" data-value="10">10</button>
+        </div>
+        <div class="col-3">
+            <button class="chip-btn chip-50" data-value="50">50</button>
+        </div>
+        <div class="col-3">
+            <button class="chip-btn chip-100" data-value="100">100</button>
+        </div>
+        <div class="col-3">
+            <button class="chip-btn chip-500" data-value="500">500</button>
+        </div>
+    </div>
+
+    <div class="alert text-center mb-0" id="bet-timer">
+        <i class="bi bi-clock-fill"></i> Waiting for round...
+    </div>
+
+    <div class="control-buttons">
+        <button class="btn-game btn-clear" id="clear-btn" style="flex: 1;">
+            <i class="bi bi-x-circle"></i> CLEAR BETS
+        </button>
+    </div>
+
+    <div class="game-info">
+        <strong>🐧 Lucky Puffin SHARED TABLE:</strong> All players see same cards! 
+        <strong>Click chips to bet instantly.</strong> Closest to 9 wins. Face=0, Ace=1. 
+        <strong>⚠️ Can't bet Player & Banker!</strong> Auto-deals at 0s. 10 WPUFF/hour bonus (max 50).
+    </div>
+
+    <div class="leaderboard-section">
+        <div class="leaderboard-title">
+            🏆 Top Players <span style="font-size: 0.7rem; opacity: 0.7;">(Live)</span>
+        </div>
+        <div class="d-flex overflow-auto leaderboard" id="leaderboard">
+            <div class="text-white p-2" style="font-size: 0.75rem;">Loading...</div>
+        </div>
+    </div>
+
+</div>
+
+<div class="card-dealing-overlay" id="card-dealing-overlay">
+    <div class="dealing-container">
+        <div class="dealing-title">
+            <span class="puffin-icon"></span> SHARED DEALER <span class="puffin-icon"></span>
+        </div>
+        <div class="hands-display">
+            <div class="hand">
+                <div class="hand-label">PLAYER</div>
+                <div class="hand-cards" id="player-hand"></div>
+                <div class="hand-total">Total: <span id="player-total-score">0</span></div>
+            </div>
+            <div class="hand">
+                <div class="hand-label">BANKER</div>
+                <div class="hand-cards" id="banker-hand"></div>
+                <div class="hand-total">Total: <span id="banker-total-score">0</span></div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="result-overlay" id="result-overlay">
+    <div class="result-message" id="result-message">
+        <h2 id="result-title">PLAYER WINS!</h2>
+        <p id="result-details">You won 100 WPUFF!</p>
+        <div style="margin-top: 15px; color: #666; font-size: 0.9rem;">
+            Next round in <span id="result-countdown">5</span>s...
+        </div>
+    </div>
+</div>
+
+<div class="loading-spinner" id="loading-spinner">
+    <div class="spinner-border text-light" role="status" style="width: 3rem; height: 3rem;">
+        <span class="visibly-hidden">Loading...</span>
+    </div>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+
+<script>
+// ============================================
+// SHARED DEALER SYSTEM - All players see same cards!
+// ============================================
+
+const API_URL = 'api.php';
+const POLLING_INTERVAL = 500; // 500ms (0.5 seconds) for smooth timer
+
+// Game State
+let playerBalance = 0;
+let playerName = 'Guest';
+let playerId = null;
+let guestId = null;
+let selectedChip = 0;
+let currentBets = { player: 0, banker: 0, tie: 0, playerPair: 0, bankerPair: 0 };
+let currentRound = null;
+let pollingInterval = null;
+let hasBetThisRound = false;
+
+// DOM Elements
+const balanceDisplay = document.getElementById('balance');
+const usernameDisplay = document.getElementById('username');
+const clearBtn = document.getElementById('clear-btn');
+const cardDealingOverlay = document.getElementById('card-dealing-overlay');
+const resultOverlay = document.getElementById('result-overlay');
+const loadingSpinner = document.getElementById('loading-spinner');
+const roundWinnings = document.getElementById('round-winnings');
+const winningsAmount = document.getElementById('winnings-amount');
+
+// ============================================
+// API
+// ============================================
+async function apiCall(action, data = {}) {
+    try {
+        const response = await fetch(API_URL, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ action, ...data })
+        });
+        const result = await response.json();
+        if (!result.success) throw new Error(result.message || 'API failed');
+        return result;
+    } catch (error) {
+        console.error('API Error:', error);
+        throw error;
+    }
+}
+
+// ============================================
+// INITIALIZATION
+// ============================================
+async function init() {
+    showLoading();
+    
+    try {
+        guestId = getOrCreateGuestId();
+        
+        const result = await apiCall('getPlayer', { guestId, playerName: null });
+        
+        if (result.data) {
+            playerId = result.data.id;
+            playerName = result.data.player_name;
+            playerBalance = result.data.balance;
+            
+            usernameDisplay.textContent = playerName;
+            updateBalanceDisplay();
+            
+            if (result.message) showToast(result.message);
+        }
+        
+        attachEventListeners();
+        startPolling();
+        
+        console.log('Game initialized:', playerName);
+    } catch (error) {
+        console.error('Init error:', error);
+        showToast('Failed to connect to server');
+        initOfflineMode();
+    } finally {
+        hideLoading();
+    }
+}
+
+function getOrCreateGuestId() {
+    let browserId = localStorage.getItem('lucky_puffin_browserId');
+    if (!browserId) {
+        browserId = `guest_${Date.now()}_${Math.floor(Math.random() * 10000)}`;
+        localStorage.setItem('lucky_puffin_browserId', browserId);
+    }
+    return browserId;
+}
+
+function initOfflineMode() {
+    playerName = 'Guest' + Math.floor(Math.random() * 9999);
+    playerBalance = 1000;
+    usernameDisplay.textContent = playerName;
+    updateBalanceDisplay();
+    attachEventListeners();
+}
+
+function showLoading() { loadingSpinner.classList.add('active'); }
+function hideLoading() { loadingSpinner.classList.remove('active'); }
+
+// ============================================
+// REAL-TIME POLLING - Get Shared Game State
+// ============================================
+async function pollGameState() {
+    try {
+        const result = await apiCall('getGameState', { playerId });
+        
+        if (result.data) {
+            updateGameState(result.data);
+        }
+    } catch (error) {
+        console.error('Polling error:', error);
+    }
+}
+
+function updateGameState(gameState) {
+    const previousRound = currentRound;
+    currentRound = gameState.current_round;
+    
+    // Detect new round
+    const isNewRound = !previousRound || (currentRound && previousRound.id !== currentRound.id);
+    
+    // Update timer
+    if (currentRound && currentRound.round_status === 'betting') {
+        updateTimerDisplay(currentRound.timer_remaining);
+        
+        // Reset for new round
+        if (isNewRound) {
+            Object.keys(currentBets).forEach(key => {
+                currentBets[key] = 0;
+                updateBetDisplay(key);
+            });
+            document.querySelectorAll('.betting-box').forEach(box => {
+                box.classList.remove('disabled', 'selected');
+            });
+            hasBetThisRound = false;
+            roundWinnings.style.display = 'none';
+            cardDealingOverlay.classList.remove('active');
+            resultOverlay.classList.remove('active');
+        }
+    }
+    
+    // Update active players count
+    if (gameState.active_players) {
+        document.getElementById('player-count').textContent = gameState.active_players.length;
+    }
+    
+    // Update activity feed
+    if (gameState.recent_activity) {
+        updateActivityFeed(gameState.recent_activity);
+    }
+    
+    // Update leaderboard
+    if (gameState.leaderboard) {
+        updateLeaderboard(gameState.leaderboard, gameState.active_players);
+    }
+    
+    // Check if cards have been dealt - AUTO SHOW DEALING WINDOW
+    if (currentRound && currentRound.player_cards && currentRound.round_status === 'dealing') {
+        const cardsJustDealt = !previousRound || previousRound.round_status === 'betting';
+        
+        if (cardsJustDealt || isNewRound) {
+            showSharedCards(currentRound);
+            
+            // Calculate total animation time (1000ms per card + reveal time)
+            const maxCards = Math.max(currentRound.player_cards.length, currentRound.banker_cards.length);
+            const animationTime = (maxCards * 1000) + 1500; // 1s per card + 1.5s for totals
+            
+            // Show result after animation completes
+            if (gameState.player_bet && gameState.player_bet.total_won !== undefined) {
+                setTimeout(() => {
+                    showResult(currentRound, gameState.player_bet);
+                }, animationTime);
+            } else {
+                // FIX: Non-betting players - Auto-close after animation + 2 seconds viewing time
+                setTimeout(() => {
+                    cardDealingOverlay.classList.remove('active');
+                }, animationTime + 2000);
+            }
+        }
+    }
+    
+    // FIX: Close overlay when round finishes (safety for all players)
+    if (currentRound && currentRound.round_status === 'finished') {
+        cardDealingOverlay.classList.remove('active');
+    }
+}
+
+function showSharedCards(round) {
+    cardDealingOverlay.classList.add('active');
+    
+    // Clear existing cards
+    const playerHand = document.getElementById('player-hand');
+    const bankerHand = document.getElementById('banker-hand');
+    playerHand.innerHTML = '';
+    bankerHand.innerHTML = '';
+    
+    // Reset totals
+    document.getElementById('player-total-score').textContent = '?';
+    document.getElementById('banker-total-score').textContent = '?';
+    
+    let dealDelay = 0;
+    const CARD_DELAY = 1000; // 1 second between each card (was 400ms)
+    
+    // Deal player cards one by one
+    round.player_cards.forEach((card, index) => {
+        if (card) {
+            setTimeout(() => {
+                const cardEl = document.createElement('div');
+                cardEl.className = 'card-placeholder';
+                cardEl.innerHTML = card.display;
+                cardEl.style.color = (['♥', '♦'].includes(card.suit)) ? 'red' : 'black';
+                playerHand.appendChild(cardEl);
+            }, dealDelay);
+            dealDelay += CARD_DELAY;
+        }
+    });
+    
+    // Deal banker cards one by one (slight offset from player cards)
+    round.banker_cards.forEach((card, index) => {
+        if (card) {
+            setTimeout(() => {
+                const cardEl = document.createElement('div');
+                cardEl.className = 'card-placeholder';
+                cardEl.innerHTML = card.display;
+                cardEl.style.color = (['♥', '♦'].includes(card.suit)) ? 'red' : 'black';
+                bankerHand.appendChild(cardEl);
+            }, (index * CARD_DELAY) + 500); // 500ms offset from player cards
+        }
+    });
+    
+    // Show totals after all cards are dealt
+    const totalDelay = Math.max(round.player_cards.length, round.banker_cards.length) * CARD_DELAY + 800;
+    setTimeout(() => {
+        document.getElementById('player-total-score').textContent = round.player_total;
+        document.getElementById('banker-total-score').textContent = round.banker_total;
+    }, totalDelay);
+}
+
+function showResult(round, playerBet) {
+    cardDealingOverlay.classList.remove('active');
+    
+    const resultTitle = document.getElementById('result-title');
+    const resultDetails = document.getElementById('result-details');
+    const resultMsg = document.getElementById('result-message');
+    const countdownEl = document.getElementById('result-countdown');
+    
+    // Show result
+    resultTitle.textContent = round.result.replace('_', ' ');
+    
+    // Calculate profit/loss (winnings minus what was bet)
+    const profit = playerBet.total_won - playerBet.total_bet;
+    
+    // Sync balance from server to fix any desync
+    syncBalanceFromServer();
+    
+    if (profit > 0) {
+        resultDetails.textContent = `You won ${profit} WPUFF!`;
+        resultMsg.className = 'result-message win';
+        
+        // Show winnings indicator
+        winningsAmount.textContent = profit;
+        roundWinnings.style.display = 'block';
+    } else if (profit === 0) {
+        resultDetails.textContent = `Tie - Bets returned`;
+        resultMsg.className = 'result-message';
+    } else {
+        resultDetails.textContent = `You lost ${Math.abs(profit)} WPUFF`;
+        resultMsg.className = 'result-message loss';
+    }
+    
+    resultOverlay.classList.add('active');
+    
+    // 5 second countdown
+    let countdown = 5;
+    countdownEl.textContent = countdown;
+    
+    const countdownInterval = setInterval(() => {
+        countdown--;
+        countdownEl.textContent = countdown;
+        
+        if (countdown <= 0) {
+            clearInterval(countdownInterval);
+            resultOverlay.classList.remove('active');
+        }
+    }, 1000);
+}
+
+// Sync balance from server to fix any desync issues
+async function syncBalanceFromServer() {
+    try {
+        const result = await apiCall('getPlayer', { guestId, playerName: null });
+        if (result.data && result.data.balance !== undefined) {
+            playerBalance = result.data.balance;
+            updateBalanceDisplay();
+            console.log('Balance synced from server:', playerBalance);
+        }
+    } catch (error) {
+        console.error('Failed to sync balance:', error);
+    }
+}
+
+function updateTimerDisplay(timeRemaining) {
+    const timerEl = document.getElementById('bet-timer');
+    timerEl.innerHTML = `<i class="bi bi-clock-fill"></i> Time: <span>${timeRemaining}</span>s`;
+    
+    if (timeRemaining <= 5) {
+        timerEl.classList.add('warning');
+    } else {
+        timerEl.classList.remove('warning');
+    }
+}
+
+function updateActivityFeed(activities) {
+    if (activities.length === 0) return;
+    
+    const activityFeed = document.getElementById('activity-feed');
+    activityFeed.innerHTML = '';
+    
+    activities.slice(0, 3).forEach(activity => {
+        const item = document.createElement('div');
+        item.className = `activity-item ${activity.activity_type}`;
+        
+        let icon = '🎲';
+        if (activity.activity_type === 'won') icon = '🎉';
+        if (activity.activity_type === 'big_win') icon = '💰';
+        if (activity.activity_type === 'lost') icon = '😢';
+        
+        item.textContent = `${icon} ${activity.message}`;
+        activityFeed.appendChild(item);
+    });
+}
+
+function updateLeaderboard(leaderboard, activePlayers) {
+    const leaderboardEl = document.getElementById('leaderboard');
+    
+    if (!leaderboard || leaderboard.length === 0) {
+        leaderboardEl.innerHTML = '<div class="text-white p-2" style="font-size: 0.75rem;">No players yet</div>';
+        return;
+    }
+    
+    const activePlayerIds = activePlayers ? activePlayers.map(p => p.player_id) : [];
+    
+    leaderboardEl.innerHTML = '';
+    
+    leaderboard.forEach((player, index) => {
+        const isMe = player.id === playerId;
+        const isPlaying = activePlayerIds.includes(player.id);
+        const card = document.createElement('div');
+        card.className = 'card text-center position-relative';
+        if (isMe) card.style.borderColor = '#ffd700';
+        if (isPlaying) card.classList.add('playing');
+        
+        card.innerHTML = `
+            <div class="rank-badge">${index + 1}</div>
+            <div class="p-2">
+                ${isPlaying ? '<div style="color: #00ff00; font-size: 0.6rem;">▶ PLAYING</div>' : ''}
+                <i class="bi bi-person-circle" style="font-size: 1.8rem;"></i>
+                <p class="mb-0 fw-bold" style="font-size: 0.7rem;">${player.player_name}${isMe ? ' 👈' : ''}</p>
+                <small class="text-success fw-bold" style="font-size: 0.7rem;">${player.balance}</small>
+            </div>
+        `;
+        
+        leaderboardEl.appendChild(card);
+    });
+}
+
+function startPolling() {
+    if (pollingInterval) return;
+    pollingInterval = setInterval(pollGameState, POLLING_INTERVAL);
+    pollGameState(); // Initial poll
+}
+
+function stopPolling() {
+    if (pollingInterval) {
+        clearInterval(pollingInterval);
+        pollingInterval = null;
+    }
+}
+
+// ============================================
+// EVENT LISTENERS
+// ============================================
+function attachEventListeners() {
+    document.querySelectorAll('.chip-btn').forEach(btn => {
+        btn.addEventListener('click', () => {
+            document.querySelectorAll('.chip-btn').forEach(b => b.classList.remove('active'));
+            btn.classList.add('active');
+            selectedChip = parseInt(btn.dataset.value);
+        });
+    });
+
+    document.querySelectorAll('.betting-box').forEach(box => {
+        box.addEventListener('click', () => handleBetClick(box));
+    });
+
+    clearBtn.addEventListener('click', clearAllBets);
+    document.getElementById('exit-btn').addEventListener('click', handleExit);
+}
+
+// ============================================
+// BETTING - Auto-place on chip click!
+// ============================================
+async function handleBetClick(box) {
+    if (!currentRound) {
+        showToast('Loading round...');
+        return;
+    }
+    
+    // Allow betting on BOTH 'waiting' and 'betting' rounds
+    if (currentRound.round_status !== 'betting' && currentRound.round_status !== 'waiting') {
+        showToast('Wait for round to finish!');
+        return;
+    }
+    
+    if (selectedChip === 0) {
+        showToast('Select a chip first!');
+        return;
+    }
+    
+    const betType = box.dataset.betType;
+    
+    if (betType === 'player' && currentBets.banker > 0) {
+        showToast('Cannot bet both Player and Banker!');
+        return;
+    }
+    if (betType === 'banker' && currentBets.player > 0) {
+        showToast('Cannot bet both Player and Banker!');
+        return;
+    }
+    
+    const newBet = currentBets[betType] + selectedChip;
+    const totalBets = Object.values(currentBets).reduce((sum, bet) => sum + bet, 0) - currentBets[betType] + newBet;
+    
+    if (totalBets > playerBalance) {
+        showToast('Insufficient balance!');
+        return;
+    }
+    
+    // Update local bets
+    currentBets[betType] = newBet;
+    updateBetDisplay(betType);
+    applyBetRestrictions();
+    
+    // Deduct from balance immediately
+    playerBalance -= selectedChip;
+    updateBalanceDisplay();
+    
+    // Auto-place bet on server
+    try {
+        await apiCall('placeBet', {
+            playerId,
+            playerName,
+            bets: currentBets,
+            roundId: currentRound.id  // ADDED: Send round ID
+        });
+        
+        hasBetThisRound = true;
+        showToast(`+${selectedChip} on ${betType.toUpperCase()}`);
+        
+        // FORCE IMMEDIATE POLL to get updated round status
+        setTimeout(() => pollGameState(), 100);
+        
+    } catch (error) {
+        // Refund if failed
+        playerBalance += selectedChip;
+        currentBets[betType] -= selectedChip;
+        updateBalanceDisplay();
+        updateBetDisplay(betType);
+        showToast('Failed to place bet!');
+        console.error(error);
+    }
+}
+
+function updateBetDisplay(betType) {
+    const typeMap = {
+        player: 'player-total',
+        banker: 'banker-total',
+        tie: 'tie-total',
+        playerPair: 'player-pair-total',
+        bankerPair: 'banker-pair-total'
+    };
+    document.getElementById(typeMap[betType]).textContent = currentBets[betType];
+}
+
+function applyBetRestrictions() {
+    document.querySelectorAll('.betting-box').forEach(box => box.classList.remove('disabled'));
+    if (currentBets.player > 0) document.getElementById('bet-banker').classList.add('disabled');
+    if (currentBets.banker > 0) document.getElementById('bet-player').classList.add('disabled');
+}
+
+function clearAllBets() {
+    if (!currentRound || currentRound.round_status !== 'betting') {
+        showToast('Cannot clear bets - round in progress!');
+        return;
+    }
+    
+    // Refund all local bets that were placed
+    const totalBet = Object.values(currentBets).reduce((sum, bet) => sum + bet, 0);
+    
+    if (totalBet > 0 && hasBetThisRound) {
+        playerBalance += totalBet;
+        updateBalanceDisplay();
+        showToast(`Bets cleared! ${totalBet} WPUFF refunded`);
+    }
+    
+    Object.keys(currentBets).forEach(key => {
+        currentBets[key] = 0;
+        updateBetDisplay(key);
+    });
+    
+    document.querySelectorAll('.betting-box').forEach(box => {
+        box.classList.remove('disabled', 'selected');
+    });
+    
+    hasBetThisRound = false;
+}
+
+async function handleExit() {
+    if (confirm(`Save and exit? Your balance of ${playerBalance} WPUFF will be saved.`)) {
+        stopPolling();
+        try {
+            await apiCall('updateBalance', { playerId, balance: playerBalance });
+        } catch (error) {
+            console.error(error);
+        }
+        showToast(`Goodbye ${playerName}!`);
+        setTimeout(() => location.reload(), 2000);
+    }
+}
+
+// ============================================
+// UI HELPERS
+// ============================================
+function updateBalanceDisplay() {
+    balanceDisplay.textContent = playerBalance;
+}
+
+function showToast(message) {
+    const toast = document.createElement('div');
+    toast.className = 'alert alert-info position-fixed top-50 start-50 translate-middle';
+    toast.style.zIndex = '10000';
+    toast.style.fontSize = '0.9rem';
+    toast.style.padding = '10px 15px';
+    toast.textContent = message;
+    document.body.appendChild(toast);
+    
+    setTimeout(() => toast.remove(), 2000);
+}
+
+// ============================================
+// START GAME
+// ============================================
+init();
+</script>
+
+</body>
+</html>

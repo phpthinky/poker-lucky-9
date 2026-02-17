@@ -831,24 +831,28 @@ function updateGameState(gameState) {
     // Detect new round
     const isNewRound = !previousRound || (currentRound && previousRound.id !== currentRound.id);
     
+    // FIX: Clear bets for NEW round (whether 'waiting' or 'betting')
+    if (isNewRound && currentRound) {
+        console.log('New round detected - clearing bets');
+        Object.keys(currentBets).forEach(key => {
+            currentBets[key] = 0;
+            updateBetDisplay(key);
+        });
+        document.querySelectorAll('.betting-box').forEach(box => {
+            box.classList.remove('disabled', 'selected');
+        });
+        hasBetThisRound = false;
+        roundWinnings.style.display = 'none';
+        cardDealingOverlay.classList.remove('active');
+        resultOverlay.classList.remove('active');
+    }
+    
     // Update timer
     if (currentRound && currentRound.round_status === 'betting') {
         updateTimerDisplay(currentRound.timer_remaining);
-        
-        // Reset for new round
-        if (isNewRound) {
-            Object.keys(currentBets).forEach(key => {
-                currentBets[key] = 0;
-                updateBetDisplay(key);
-            });
-            document.querySelectorAll('.betting-box').forEach(box => {
-                box.classList.remove('disabled', 'selected');
-            });
-            hasBetThisRound = false;
-            roundWinnings.style.display = 'none';
-            cardDealingOverlay.classList.remove('active');
-            resultOverlay.classList.remove('active');
-        }
+    } else if (currentRound && currentRound.round_status === 'waiting') {
+        document.getElementById('bet-timer').innerHTML = '<i class="bi bi-clock-fill"></i> Waiting for players to bet...';
+        document.getElementById('bet-timer').classList.remove('warning');
     }
     
     // Update active players count

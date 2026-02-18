@@ -1,132 +1,201 @@
 /**
- * Lucky Puffin — game.js
- * Handles WebSocket events, betting UI, and round lifecycle.
- * Replaces the old polling approach entirely.
+ * Lucky Puffin — game.js (Laravel Mix / Webpack)
+ *
+ * THE FIX: app.js and game.js are separate Webpack bundles.
+ * window.Echo is created in app.js but game.js may run before it finishes.
+ *
+ * Solution: wait for 'echo:ready' custom event dispatched by app.js,
+ * with a 100ms polling fallback in case scripts load out of order.
  */
 
-// ── State ────────────────────────────────────────────────────────────────────
+// ── State ─────────────────────────────────────────────────────────────────────
+let playerId        = null;
+let playerBalance   = 0;
+let playerName      = null;
 
-let playerId    = null;
-let playerName  = null;
-let playerBalance = 0;
-let authToken   = null;
-
-let currentRound  = null;
-let currentBets   = { player: 0, banker: 0, tie: 0, playerPair: 0, bankerPair: 0, randomPair: 0 };
-let selectedChip  = 0;
+let currentRound    = null;
+let currentBets     = { player: 0, banker: 0, tie: 0, playerPair: 0, bankerPair: 0, randomPair: 0 };
+let selectedChip    = 0;
 let hasBetThisRound = false;
+let dealingShown    = false;
 
 const API_BASE = '/api/v1';
 
-// ── Bootstrap from Blade data attributes ────────────────────────────────────
+// ── Entry point ───────────────────────────────────────────────────────────────
 
-function init() {
+document.addEventListener('DOMContentLoaded', () => {
+    readPlayerData();
+
+    if (window.echoReady && window.Echo) {
+        // app.js already finished — boot immediately
+        boot();
+    } else {
+        // Wait for app.js to signal Echo is ready
+        document.addEventListener('echo:ready', boot, { once: true });
+
+        // Fallback polling: check every 100ms, give up after 5s
+        let attempts = 0;
+        const poll = setInterval(() => {
+            if (window.Echo) {
+                clearInterval(poll);
+                document.removeEventListener('echo:ready', boot);
+                boot();
+            } else if (++attempts > 50) {
+                clearInterval(poll);
+                console.error('[Game] Echo not available after 5s — check app.js loaded before game.js');
+                setTimerLabel('WebSocket error — please refresh');
+            }
+        }, 100);
+    }
+});
+
+function readPlayerData() {
     const app = document.getElementById('game-app');
-    playerId      = parseInt(app.dataset.playerId);
-    playerName    = app.dataset.playerName;
-    playerBalance = parseInt(app.dataset.balance);
-    authToken     = localStorage.getItem('auth_token');
-
-    // Update auth header for all future axios calls
-    window.axios.defaults.headers.common['Authorization'] = `Bearer ${authToken}`;
-
+    if (!app) return;
+    playerId      = parseInt(app.dataset.playerId)  || null;
+    playerName    = app.dataset.playerName           || 'Guest';
+    playerBalance = parseInt(app.dataset.balance)    || 0;
     updateBalanceDisplay();
+}
+
+function boot() {
+    console.log('[Game] Echo ready — subscribing to channels');
     subscribeToGameTable();
     subscribeToPlayerChannel();
     fetchInitialState();
 }
 
-// ── WebSocket Subscriptions ───────────────────────────────────────────────────
+// ── WebSocket: Public channel ─────────────────────────────────────────────────
 
 function subscribeToGameTable() {
     window.Echo.channel('game-table')
 
         .listen('.round.started', (data) => {
             console.log('[WS] round.started', data);
-            currentRound = data;
-            clearBets();          // Always clear on new round
-            enableBetting();
-            updateTimerDisplay(data.timerSeconds);
+            const isNewRound = !currentRound || currentRound.round_id !== data.round_id;
+            currentRound     = data;
+            dealingShown     = false;
+
+            if (isNewRound) {
+                clearBets();
+                hideOverlays();
+            }
+
+            if (data.status === 'betting') {
+                enableBetting();
+                updateTimerDisplay(data.timer_seconds);
+            } else {
+                setTimerLabel('Waiting for first bet...');
+                enableBetting();
+            }
         })
 
         .listen('.timer.tick', (data) => {
-            // Server pushes every second — smooth countdown, no polling
-            updateTimerDisplay(data.secondsRemaining);
+            updateTimerDisplay(data.seconds_remaining);
         })
 
         .listen('.bet.placed', (data) => {
-            // Another player placed a bet — show in activity feed
-            addActivity(`🎲 ${data.playerName} bet ${data.totalBet} WPUFF`);
-            document.getElementById('player-count').textContent = data.activePlayers;
+            addActivityItem('\uD83C\uDFB2 ' + data.player_name + ' bet ' + data.total_bet + ' WPUFF');
+            setPlayerCount(data.active_players);
         })
 
         .listen('.cards.dealt', (data) => {
             console.log('[WS] cards.dealt', data);
-            currentRound = data;
+            if (dealingShown) return;
+            dealingShown = true;
+            currentRound = Object.assign({}, currentRound, data);
             disableBetting();
+            setTimerLabel('Dealing cards...');
             showSharedCards(data);
+
+            if (!hasBetThisRound) {
+                const pLen   = (data.player_cards || data.playerCards || []).length;
+                const bLen   = (data.banker_cards || data.bankerCards || []).length;
+                const waitMs = (Math.max(pLen, bLen) * 1000) + 1500 + 2000;
+                setTimeout(hideOverlays, waitMs);
+            }
         })
 
         .listen('.round.finished', (data) => {
-            // Non-betting players: close overlay after dealing animation
-            const maxCards    = Math.max(data.playerCards.length, data.bankerCards.length);
-            const animTime    = (maxCards * 1000) + 1500;
-            setTimeout(() => {
-                document.getElementById('card-dealing-overlay').classList.remove('active');
-            }, animTime + 2000);
+            console.log('[WS] round.finished', data);
+            showNextRoundCountdown(data.next_round_in);
         });
 }
+
+// ── WebSocket: Private player channel ────────────────────────────────────────
 
 function subscribeToPlayerChannel() {
     if (!playerId) return;
 
-    window.Echo.private(`player.${playerId}`)
-
+    window.Echo.private('player.' + playerId)
         .listen('.round.result', (data) => {
             console.log('[WS] round.result', data);
-            // Sync balance to server value (source of truth)
-            playerBalance = data.newBalance;
+            playerBalance = data.new_balance;
             updateBalanceDisplay();
-            showResult(data);
+
+            const pLen   = (currentRound && currentRound.player_cards) ? currentRound.player_cards.length : 3;
+            const bLen   = (currentRound && currentRound.banker_cards) ? currentRound.banker_cards.length : 3;
+            const animMs = (Math.max(pLen, bLen) * 1000) + 1500;
+            setTimeout(function () { showResult(data); }, animMs);
         });
 }
 
-// ── Initial State (REST fallback on page load) ───────────────────────────────
+// ── REST: Initial page load ───────────────────────────────────────────────────
 
 async function fetchInitialState() {
     try {
-        const { data } = await window.axios.get(`${API_BASE}/game/state`);
-        if (data.current_round) {
-            currentRound = data.current_round;
-            renderRoundState(data);
+        const res   = await window.axios.get(API_BASE + '/game/state');
+        const data  = res.data;
+        const round = data.current_round;
+
+        if (round) {
+            currentRound = round;
+            dealingShown = false;
+
+            if (round.round_status === 'betting') {
+                enableBetting();
+                updateTimerDisplay(round.timer_remaining || 0);
+            }
+
+            if (round.round_status === 'dealing' && round.player_cards && round.player_cards.length) {
+                dealingShown = true;
+                disableBetting();
+                showSharedCards({
+                    player_cards: round.player_cards,
+                    banker_cards: round.banker_cards,
+                    player_total: round.player_total,
+                    banker_total: round.banker_total,
+                });
+            }
         }
-        if (data.leaderboard)     renderLeaderboard(data.leaderboard, data.active_players);
+
+        if (data.leaderboard)     renderLeaderboard(data.leaderboard, data.active_players || {});
         if (data.recent_activity) renderActivityFeed(data.recent_activity);
+        setPlayerCount(Object.keys(data.active_players || {}).length);
+
     } catch (err) {
-        console.error('Failed to load initial state', err);
+        console.error('[Init] Failed to load game state:', err);
+        setTimerLabel('Connection error — refresh to retry');
     }
 }
 
-// ── Betting ──────────────────────────────────────────────────────────────────
+// ── Betting ───────────────────────────────────────────────────────────────────
 
 async function handleBetClick(box) {
     if (!currentRound) return showToast('Loading...');
 
-    const status = currentRound.round_status;
+    const status = currentRound.round_status || currentRound.status;
     if (status !== 'waiting' && status !== 'betting') {
         return showToast('Wait for the next round!');
     }
-
-    if (selectedChip === 0)           return showToast('Select a chip first!');
+    if (selectedChip === 0) return showToast('Select a chip first!');
 
     const betType = box.dataset.betType;
+    if (betType === 'player' && currentBets.banker > 0) return showToast('Cannot bet Player and Banker!');
+    if (betType === 'banker' && currentBets.player > 0) return showToast('Cannot bet Player and Banker!');
 
-    if (betType === 'player' && currentBets.banker  > 0) return showToast('Cannot bet Player and Banker!');
-    if (betType === 'banker' && currentBets.player  > 0) return showToast('Cannot bet Player and Banker!');
-
-    const newTotal = Object.values({ ...currentBets, [betType]: currentBets[betType] + selectedChip })
-                           .reduce((s, v) => s + v, 0);
-
+    const projected = Object.assign({}, currentBets, { [betType]: currentBets[betType] + selectedChip });
+    const newTotal  = Object.values(projected).reduce(function (s, v) { return s + v; }, 0);
     if (newTotal > playerBalance) return showToast('Insufficient balance!');
 
     // Optimistic update
@@ -134,229 +203,255 @@ async function handleBetClick(box) {
     playerBalance        -= selectedChip;
     updateBetDisplay(betType);
     updateBalanceDisplay();
+    hasBetThisRound = true;
 
     try {
-        await window.axios.post(`${API_BASE}/game/bet`, {
-            round_id: currentRound.id,
+        await window.axios.post(API_BASE + '/game/bet', {
+            round_id: currentRound.id || currentRound.round_id,
             bets:     currentBets,
         });
-        hasBetThisRound = true;
-        showToast(`+${selectedChip} on ${betType.toUpperCase()}`);
+        showToast('+' + selectedChip + ' on ' + betType.toUpperCase());
     } catch (err) {
-        // Rollback optimistic update
+        // Roll back
         currentBets[betType] -= selectedChip;
         playerBalance        += selectedChip;
+        hasBetThisRound       = Object.values(currentBets).some(function (v) { return v > 0; });
         updateBetDisplay(betType);
         updateBalanceDisplay();
-        showToast(err.response?.data?.message ?? 'Failed to place bet');
+        const msg = err.response && err.response.data && err.response.data.message
+            ? err.response.data.message
+            : 'Bet failed — try again';
+        showToast(msg);
+        console.error('[Bet]', err);
     }
 }
 
 async function clearAllBets() {
-    if (!currentRound || currentRound.round_status !== 'betting') {
-        return showToast('Cannot clear bets now!');
-    }
-    const total = Object.values(currentBets).reduce((s, v) => s + v, 0);
+    const status = (currentRound && (currentRound.round_status || currentRound.status));
+    if (status !== 'betting') return showToast('Cannot clear bets now!');
+
+    const total = Object.values(currentBets).reduce(function (s, v) { return s + v; }, 0);
     if (total === 0) return;
 
     try {
-        const { data } = await window.axios.post(`${API_BASE}/game/clear`, {
-            round_id: currentRound.id,
+        const res = await window.axios.post(API_BASE + '/game/clear', {
+            round_id: currentRound.id || currentRound.round_id,
         });
-        playerBalance = data.balance;
+        playerBalance = res.data.balance;
         clearBets();
         updateBalanceDisplay();
-        showToast(`Bets cleared! ${total} WPUFF refunded`);
+        showToast('Cleared! ' + total + ' WPUFF refunded');
     } catch (err) {
         showToast('Could not clear bets');
     }
 }
 
-// ── UI Helpers ───────────────────────────────────────────────────────────────
-
-function clearBets() {
-    Object.keys(currentBets).forEach(k => { currentBets[k] = 0; updateBetDisplay(k); });
-    document.querySelectorAll('.betting-box').forEach(b => b.classList.remove('disabled'));
-    hasBetThisRound = false;
-}
-
-function enableBetting() {
-    document.getElementById('bet-timer').classList.remove('d-none');
-    document.querySelectorAll('.betting-box').forEach(b => b.classList.remove('disabled'));
-}
-
-function disableBetting() {
-    document.querySelectorAll('.betting-box').forEach(b => b.classList.add('disabled'));
-}
-
-function updateTimerDisplay(seconds) {
-    const el = document.getElementById('bet-timer');
-    if (!el) return;
-    el.innerHTML = `<i class="bi bi-clock-fill"></i> Time: <span>${seconds}</span>s`;
-    el.classList.toggle('text-danger', seconds <= 5);
-}
-
-function updateBetDisplay(betType) {
-    const map = {
-        player:     'player-total',
-        banker:     'banker-total',
-        tie:        'tie-total',
-        playerPair: 'player-pair-total',
-        bankerPair: 'banker-pair-total',
-        randomPair: 'random-pair-total',
-    };
-    const el = document.getElementById(map[betType]);
-    if (el) el.textContent = currentBets[betType];
-}
-
-function updateBalanceDisplay() {
-    const el = document.getElementById('player-balance');
-    if (el) el.textContent = playerBalance.toLocaleString();
-}
+// ── Card animation ────────────────────────────────────────────────────────────
 
 function showSharedCards(data) {
-    const overlay   = document.getElementById('card-dealing-overlay');
-    const pHand     = document.getElementById('player-hand');
-    const bHand     = document.getElementById('banker-hand');
+    const overlay = document.getElementById('card-dealing-overlay');
+    const pHand   = document.getElementById('player-hand');
+    const bHand   = document.getElementById('banker-hand');
+    if (!overlay || !pHand || !bHand) return;
 
     overlay.classList.add('active');
     pHand.innerHTML = '';
     bHand.innerHTML = '';
+    var pScore = document.getElementById('player-total-score');
+    var bScore = document.getElementById('banker-total-score');
+    if (pScore) pScore.textContent = '?';
+    if (bScore) bScore.textContent = '?';
 
-    document.getElementById('player-total-score').textContent = '?';
-    document.getElementById('banker-total-score').textContent = '?';
+    const DELAY  = 1000;
+    const pCards = data.player_cards || data.playerCards || [];
+    const bCards = data.banker_cards || data.bankerCards || [];
 
-    const DELAY = 1000; // 1 second per card
-
-    data.playerCards.forEach((card, i) => {
-        setTimeout(() => appendCard(pHand, card), i * DELAY);
+    pCards.forEach(function (card, i) {
+        setTimeout(function () { appendCard(pHand, card); }, i * DELAY);
     });
-    data.bankerCards.forEach((card, i) => {
-        setTimeout(() => appendCard(bHand, card), (i * DELAY) + 500);
+    bCards.forEach(function (card, i) {
+        setTimeout(function () { appendCard(bHand, card); }, (i * DELAY) + 500);
     });
 
-    const totalTime = Math.max(data.playerCards.length, data.bankerCards.length) * DELAY + 800;
-    setTimeout(() => {
-        document.getElementById('player-total-score').textContent = data.playerTotal;
-        document.getElementById('banker-total-score').textContent = data.bankerTotal;
-    }, totalTime);
+    const totalMs = Math.max(pCards.length, bCards.length) * DELAY + 800;
+    setTimeout(function () {
+        if (pScore) pScore.textContent = data.player_total != null ? data.player_total : (data.playerTotal || '?');
+        if (bScore) bScore.textContent = data.banker_total != null ? data.banker_total : (data.bankerTotal || '?');
+    }, totalMs);
 }
 
 function appendCard(container, card) {
-    const el      = document.createElement('div');
-    el.className  = 'card-placeholder';
+    const el       = document.createElement('div');
+    el.className   = 'card-placeholder';
     el.textContent = card.display;
-    el.style.color = ['♥', '♦'].includes(card.suit) ? '#dc3545' : '#212529';
+    el.style.color = ['♥', '♦'].indexOf(card.suit) !== -1 ? '#dc3545' : '#212529';
     container.appendChild(el);
 }
 
 function showResult(data) {
-    const maxCards  = 3;
-    const animTime  = (maxCards * 1000) + 1500;
+    hideOverlays();
 
-    setTimeout(() => {
-        document.getElementById('card-dealing-overlay').classList.remove('active');
-        document.getElementById('result-overlay').classList.add('active');
-        document.getElementById('result-title').textContent = data.result.replace('_', ' ');
+    const resultEl  = document.getElementById('result-overlay');
+    const titleEl   = document.getElementById('result-title');
+    const detailsEl = document.getElementById('result-details');
+    if (!resultEl) return;
 
-        const profit = data.profit;
-        document.getElementById('result-details').textContent =
-            profit > 0 ? `+${profit} WPUFF 🎉` :
-            profit < 0 ? `${profit} WPUFF 😢` :
-                         'Bet returned (Tie)';
+    resultEl.classList.add('active');
+    if (titleEl)   titleEl.textContent = (data.result || '').replace(/_/g, ' ');
 
-        startResultCountdown();
-    }, animTime);
+    var profit = data.profit || 0;
+    if (detailsEl) {
+        detailsEl.textContent = profit > 0
+            ? 'You won +' + profit + ' WPUFF \uD83C\uDF89'
+            : profit < 0
+                ? 'You lost ' + Math.abs(profit) + ' WPUFF \uD83D\uDE22'
+                : 'Tie \u2014 bet returned';
+    }
+
+    startCountdown('result-countdown', 5, function () {
+        resultEl.classList.remove('active');
+    });
 }
 
-function startResultCountdown() {
-    let count = 5;
-    const el  = document.getElementById('result-countdown');
-
-    const tick = () => {
-        if (el) el.textContent = count + 's';
-        if (count-- <= 0) {
-            document.getElementById('result-overlay').classList.remove('active');
-        } else {
-            setTimeout(tick, 1000);
-        }
-    };
-    tick();
+function showNextRoundCountdown(seconds) {
+    var wrapper = document.getElementById('next-round-wrapper');
+    if (!wrapper) return;
+    wrapper.classList.remove('d-none');
+    startCountdown('next-round-seconds', seconds, function () {
+        wrapper.classList.add('d-none');
+    });
 }
 
-function renderRoundState(data) {
-    const round = data.current_round;
-    if (!round) return;
+function hideOverlays() {
+    var d = document.getElementById('card-dealing-overlay');
+    var r = document.getElementById('result-overlay');
+    if (d) d.classList.remove('active');
+    if (r) r.classList.remove('active');
+}
 
-    if (round.round_status === 'betting') {
-        enableBetting();
-        updateTimerDisplay(round.timer_remaining ?? 0);
-    }
-    if (round.player_cards?.length) {
-        showSharedCards({
-            playerCards:  round.player_cards,
-            bankerCards:  round.banker_cards,
-            playerTotal:  round.player_total,
-            bankerTotal:  round.banker_total,
-        });
-    }
+// ── UI helpers ────────────────────────────────────────────────────────────────
+
+function clearBets() {
+    Object.keys(currentBets).forEach(function (k) { currentBets[k] = 0; updateBetDisplay(k); });
+    document.querySelectorAll('.betting-box').forEach(function (b) { b.classList.remove('disabled'); });
+    hasBetThisRound = false;
+}
+
+function enableBetting()  {
+    document.querySelectorAll('.betting-box').forEach(function (b) { b.classList.remove('disabled'); });
+}
+function disableBetting() {
+    document.querySelectorAll('.betting-box').forEach(function (b) { b.classList.add('disabled'); });
+}
+
+function updateTimerDisplay(seconds) {
+    var el = document.getElementById('bet-timer');
+    if (!el) return;
+    el.innerHTML = '<i class="bi bi-clock-fill"></i> Time: <span class="fw-bold">' + seconds + '</span>s';
+    el.classList.remove('text-success', 'text-warning', 'text-danger');
+    if (seconds <= 5)       el.classList.add('text-danger');
+    else if (seconds <= 10) el.classList.add('text-warning');
+    else                    el.classList.add('text-success');
+}
+
+function setTimerLabel(text) {
+    var el = document.getElementById('bet-timer');
+    if (el) el.innerHTML = '<i class="bi bi-clock-fill"></i> ' + text;
+}
+
+var BET_DISPLAY_MAP = {
+    player:     'player-total',
+    banker:     'banker-total',
+    tie:        'tie-total',
+    playerPair: 'player-pair-total',
+    bankerPair: 'banker-pair-total',
+    randomPair: 'random-pair-total',
+};
+
+function updateBetDisplay(betType) {
+    var el = document.getElementById(BET_DISPLAY_MAP[betType]);
+    if (el) el.textContent = currentBets[betType];
+}
+
+function updateBalanceDisplay() {
+    ['player-balance', 'player-balance-side'].forEach(function (id) {
+        var el = document.getElementById(id);
+        if (el) el.textContent = Number(playerBalance).toLocaleString();
+    });
+}
+
+function setPlayerCount(n) {
+    var el = document.getElementById('player-count');
+    if (el) el.textContent = n;
 }
 
 function renderLeaderboard(leaders, activePlayers) {
-    const el      = document.getElementById('leaderboard');
+    var el = document.getElementById('leaderboard');
     if (!el) return;
-    const activeIds = (activePlayers ?? []).map(p => p.player_id ?? p.id);
-
-    el.innerHTML = leaders.map((p, i) => `
-        <div class="d-flex justify-content-between align-items-center py-1 border-bottom border-secondary">
-            <span class="fw-bold text-warning">#${i + 1}</span>
-            <span class="${p.id === playerId ? 'text-warning' : 'text-white'}">
-                ${p.player_name}${activeIds.includes(p.id) ? ' 🟢' : ''}
-            </span>
-            <span class="text-success fw-bold">${p.balance.toLocaleString()}</span>
-        </div>
-    `).join('');
+    var activeIds = Object.keys(activePlayers || {}).map(Number);
+    el.innerHTML = leaders.map(function (p, i) {
+        var isMe     = p.id === playerId;
+        var isActive = activeIds.indexOf(p.id) !== -1;
+        return '<div class="d-flex justify-content-between align-items-center py-1 border-bottom border-secondary small">'
+            + '<span class="text-warning fw-bold">#' + (i + 1) + '</span>'
+            + '<span class="' + (isMe ? 'text-warning fw-bold' : 'text-white') + '">'
+            + escHtml(p.player_name) + (isActive ? ' \uD83D\uDFE2' : '')
+            + '</span>'
+            + '<span class="text-success fw-bold">' + Number(p.balance).toLocaleString() + '</span>'
+            + '</div>';
+    }).join('');
 }
 
 function renderActivityFeed(items) {
-    const el = document.getElementById('activity-feed');
+    var el = document.getElementById('activity-feed');
     if (!el) return;
-    el.innerHTML = items.slice(0, 5).map(a => `
-        <div class="activity-item small py-1">${a.message}</div>
-    `).join('');
+    el.innerHTML = items.slice(0, 5).map(function (a) {
+        return '<div class="activity-item small py-1">\uD83C\uDFB2 ' + escHtml(a.message) + '</div>';
+    }).join('');
 }
 
-function addActivity(message) {
-    const el   = document.getElementById('activity-feed');
+function addActivityItem(message) {
+    var el = document.getElementById('activity-feed');
     if (!el) return;
-    const item = document.createElement('div');
+    var item     = document.createElement('div');
     item.className   = 'activity-item small py-1';
     item.textContent = message;
     el.prepend(item);
-    // Keep max 5
     while (el.children.length > 5) el.lastChild.remove();
 }
 
 function showToast(msg) {
-    const el = document.getElementById('toast-container');
-    if (!el) { console.log(msg); return; }
-    const toast      = document.createElement('div');
-    toast.className  = 'toast-msg alert alert-dark py-1 px-3 mb-1 small';
-    toast.textContent = msg;
-    el.appendChild(toast);
-    setTimeout(() => toast.remove(), 3000);
+    var container = document.getElementById('toast-container');
+    if (!container) return;
+    var el     = document.createElement('div');
+    el.className   = 'toast-msg alert alert-dark py-1 px-3 mb-1 small';
+    el.textContent = msg;
+    container.appendChild(el);
+    setTimeout(function () { el.remove(); }, 3000);
 }
 
-// ── Expose globally for onclick attributes ───────────────────────────────────
+function startCountdown(elementId, seconds, onDone) {
+    var count = seconds;
+    var el    = document.getElementById(elementId);
+    var tick  = function () {
+        if (el) el.textContent = count + 's';
+        if (count-- <= 0) { if (onDone) onDone(); }
+        else setTimeout(tick, 1000);
+    };
+    tick();
+}
 
-window.handleBetClick  = handleBetClick;
-window.clearAllBets    = clearAllBets;
-window.selectChip      = (amount) => {
+function escHtml(str) {
+    return String(str || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+}
+
+// ── Expose for Blade onclick= attributes ─────────────────────────────────────
+
+window.handleBetClick = handleBetClick;
+window.clearAllBets   = clearAllBets;
+window.selectChip     = function (amount) {
     selectedChip = amount;
-    document.querySelectorAll('.chip').forEach(c => c.classList.remove('active'));
-    document.querySelector(`.chip[data-value="${amount}"]`)?.classList.add('active');
+    document.querySelectorAll('.chip').forEach(function (c) {
+        c.classList.toggle('active', parseInt(c.dataset.value) === amount);
+    });
 };
-
-// ── Boot ─────────────────────────────────────────────────────────────────────
-
-document.addEventListener('DOMContentLoaded', init);

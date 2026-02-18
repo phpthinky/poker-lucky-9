@@ -3,6 +3,7 @@
 namespace App\Http\Controllers;
 
 use App\Models\ActivityFeed;
+use Carbon\Carbon;
 use App\Models\GameRound;
 use App\Models\Player;
 use App\Models\RoundBet;
@@ -30,12 +31,32 @@ class GameController extends Controller
      */
     public function state(Request $request): JsonResponse
     {
-        // Round from Redis (fast) or DB fallback
+        // Round: Redis first (fast), fall back to DB
         $roundData = $this->redis->getRound();
 
         if (! $roundData) {
             $round     = GameRound::latest()->first();
             $roundData = $round ? $this->formatRound($round) : null;
+        }
+
+        // Timer: Redis stores the precise countdown.
+        // If Redis is down, recalculate from DB started_at timestamp.
+        if ($roundData) {
+            $timerFromRedis = $this->redis->getTimerRemaining();
+
+            if ($timerFromRedis > 0) {
+                $roundData['timer_remaining'] = $timerFromRedis;
+            } elseif (
+                ($roundData['round_status'] ?? '') === 'betting' &&
+                ! empty($roundData['started_at'])
+            ) {
+                // Redis unavailable — compute from DB timestamp
+                $elapsed  = now()->diffInSeconds(\Carbon\Carbon::parse($roundData['started_at']));
+                $duration = config('game.betting_duration', 20);
+                $roundData['timer_remaining'] = max(0, $duration - $elapsed);
+            } else {
+                $roundData['timer_remaining'] = 0;
+            }
         }
 
         // Player's bet on this round
@@ -55,8 +76,15 @@ class GameController extends Controller
             'id', 'player_name', 'balance',
         ]);
 
-        // Active players (from Redis)
+        // Active players: Redis first, fall back to counting DB bets for current round
         $activePlayers = $this->redis->getActivePlayers();
+
+        if (empty($activePlayers) && $roundData) {
+            // Redis unavailable — count who has a bet in the current round
+            $activePlayers = RoundBet::where('round_id', $roundData['id'])
+                ->pluck('player_name', 'player_id')
+                ->toArray();
+        }
 
         return response()->json([
             'success'         => true,

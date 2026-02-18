@@ -1,0 +1,8 @@
+# Add these to your existing .env file
+# (MIX_ prefix exposes them to webpack.mix.js at build time)
+
+# These mirror your REVERB_* values — used as fallback when Blade meta tags aren't available
+MIX_REVERB_APP_KEY="${REVERB_APP_KEY}"
+MIX_REVERB_HOST="${REVERB_HOST}"
+MIX_REVERB_PORT="${REVERB_PORT}"
+MIX_REVERB_SCHEME="${REVERB_SCHEME}"

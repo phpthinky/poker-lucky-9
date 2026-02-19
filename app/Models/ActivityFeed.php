@@ -6,6 +6,8 @@ use Illuminate\Database\Eloquent\Model;
 
 class ActivityFeed extends Model
 {
+    protected $table = 'activity_feed'; // migration uses singular name
+
     public $timestamps = false;  // Only has created_at
 
     protected $fillable = [

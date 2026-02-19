@@ -100,6 +100,9 @@ class GameController extends Controller
             'success'         => true,
             'current_round'   => $roundData,
             'player_bet'      => $playerBet,
+            // Authoritative balance so the frontend can sync on page load/refresh
+            // without relying solely on localStorage (which can drift after bets).
+            'player_balance'  => $authedUser ? $authedUser->fresh()->balance : null,
             'active_players'  => $activePlayers,
             'recent_activity' => $recentActivity,
             'leaderboard'     => $leaderboard,
@@ -166,11 +169,18 @@ class GameController extends Controller
             totalBet: $totalBet,
         );
 
+        // Refresh the round so we have the latest status + timer after startBetting() ran.
+        $round->refresh();
+
         return response()->json([
-            'success' => true,
-            'message' => 'Bet placed!',
-            'bet'     => $bet,
-            'balance' => $player->fresh()->balance,
+            'success'         => true,
+            'message'         => 'Bet placed!',
+            'bet'             => $bet,
+            'balance'         => $player->fresh()->balance,
+            // Lets the frontend kick off a local countdown immediately — critical on
+            // shared hosting where the queue worker may not be running yet.
+            'round_status'    => $round->round_status->value,
+            'timer_remaining' => $round->timer_remaining,
         ]);
     }
 

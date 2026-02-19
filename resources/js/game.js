@@ -19,6 +19,12 @@ let selectedChip    = 0;
 let hasBetThisRound = false;
 let dealingShown    = false;
 
+// Client-side countdown — fires immediately when betting starts, even on shared
+// hosting where the queue worker (ProcessRoundTimer) may not be running yet.
+// Server TimerTick WS events correct it whenever they do arrive.
+let localCountdownTimer     = null;
+let localCountdownRemaining = 0;
+
 const API_BASE = '/api/v1';
 
 // ── Entry point ───────────────────────────────────────────────────────────────
@@ -79,13 +85,14 @@ function subscribeToGameTable() {
             dealingShown     = false;
 
             if (isNewRound) {
+                stopLocalCountdown();
                 clearBets();
                 hideOverlays();
             }
 
             if (data.status === 'betting') {
                 enableBetting();
-                updateTimerDisplay(data.timer_seconds);
+                startLocalCountdown(data.timer_seconds);
             } else {
                 setTimerLabel('Waiting for first bet...');
                 enableBetting();
@@ -93,6 +100,8 @@ function subscribeToGameTable() {
         })
 
         .listen('.timer.tick', (data) => {
+            // Sync local counter with authoritative server value
+            localCountdownRemaining = data.seconds_remaining;
             updateTimerDisplay(data.seconds_remaining);
         })
 
@@ -150,13 +159,19 @@ async function fetchInitialState() {
         const data  = res.data;
         const round = data.current_round;
 
+        // Sync authoritative server balance — fixes balance showing 1000 after refresh
+        if (data.player_balance !== null && data.player_balance !== undefined) {
+            playerBalance = data.player_balance;
+            updateBalanceDisplay();
+        }
+
         if (round) {
             currentRound = round;
             dealingShown = false;
 
             if (round.round_status === 'betting') {
                 enableBetting();
-                updateTimerDisplay(round.timer_remaining || 0);
+                startLocalCountdown(round.timer_remaining || 0);
             }
 
             if (round.round_status === 'dealing' && round.player_cards && round.player_cards.length) {
@@ -200,6 +215,9 @@ async function handleBetClick(box) {
     const newTotal  = Object.values(projected).reduce(function (s, v) { return s + v; }, 0);
     if (newTotal > playerBalance) return showToast('Insufficient balance!');
 
+    // Was the round waiting before this click? Used below to start the countdown.
+    const wasWaiting = status === 'waiting';
+
     // Optimistic update
     currentBets[betType] += selectedChip;
     playerBalance        -= selectedChip;
@@ -208,10 +226,24 @@ async function handleBetClick(box) {
     hasBetThisRound = true;
 
     try {
-        await window.axios.post(API_BASE + '/game/bet', {
+        const res = await window.axios.post(API_BASE + '/game/bet', {
             round_id: currentRound.id || currentRound.round_id,
             bets:     currentBets,
         });
+
+        // Sync to server-authoritative balance (prevents drift across multi-chip clicks)
+        if (res.data.balance !== undefined) {
+            playerBalance = res.data.balance;
+            updateBalanceDisplay();
+        }
+
+        // If this bet just kicked off the betting phase, start the local countdown
+        // immediately — on shared hosting the queue worker may not fire for a while.
+        if (wasWaiting && res.data.round_status === 'betting') {
+            currentRound.round_status = 'betting';
+            startLocalCountdown(res.data.timer_remaining || 20);
+        }
+
         showToast('+' + selectedChip + ' on ' + betType.toUpperCase());
     } catch (err) {
         // Roll back
@@ -344,6 +376,35 @@ function enableBetting()  {
 }
 function disableBetting() {
     document.querySelectorAll('.betting-box').forEach(function (b) { b.classList.add('disabled'); });
+}
+
+// ── Local countdown ───────────────────────────────────────────────────────────
+// Drives the on-screen timer without depending on WS TimerTick events.
+// Essential on shared hosting (Hostinger) where a persistent queue worker cannot
+// run — the bet response tells us how many seconds remain and we count down here.
+// Server-sent TimerTick events simply overwrite localCountdownRemaining to stay in sync.
+
+function startLocalCountdown(seconds) {
+    stopLocalCountdown();
+    localCountdownRemaining = seconds;
+    updateTimerDisplay(localCountdownRemaining);
+
+    localCountdownTimer = setInterval(function () {
+        localCountdownRemaining--;
+        if (localCountdownRemaining <= 0) {
+            localCountdownRemaining = 0;
+            stopLocalCountdown();
+            setTimerLabel('Waiting for cards...');
+            return;
+        }
+        updateTimerDisplay(localCountdownRemaining);
+    }, 1000);
+}
+
+function stopLocalCountdown() {
+    clearInterval(localCountdownTimer);
+    localCountdownTimer     = null;
+    localCountdownRemaining = 0;
 }
 
 function updateTimerDisplay(seconds) {

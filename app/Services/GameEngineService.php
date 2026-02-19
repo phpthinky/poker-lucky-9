@@ -61,7 +61,16 @@ class GameEngineService
     {
         $isFirstBet = $round->round_status === RoundStatus::Waiting;
 
-        $bet = DB::transaction(function () use ($round, $player, $bets, $totalBet, $isFirstBet) {
+        // How much has this player already committed to this round?
+        // We only deduct the ADDITIONAL chips placed in this click, not the
+        // cumulative total — otherwise each chip click deducts way too much.
+        $existingBet = RoundBet::where('round_id', $round->id)
+            ->where('player_id', $player->id)
+            ->value('total_bet') ?? 0;
+
+        $betDelta = max(0, $totalBet - $existingBet);
+
+        $bet = DB::transaction(function () use ($round, $player, $bets, $totalBet, $betDelta, $isFirstBet) {
 
             // Start betting on first chip click
             if ($isFirstBet) {
@@ -86,9 +95,10 @@ class GameEngineService
                 ]
             );
 
-            // Deduct balance in DB (source of truth)
-            // Frontend has already done optimistic deduction for UX speed
-            $player->decrement('balance', $totalBet);
+            // Deduct only the chips added in THIS click, not the whole cumulative bet.
+            if ($betDelta > 0) {
+                $player->decrement('balance', $betDelta);
+            }
 
             return $bet;
         });
@@ -144,10 +154,18 @@ class GameEngineService
         $this->redis->updateRoundField('round_status', RoundStatus::Betting->value);
         $this->redis->updateRoundField('started_at', now()->toIso8601String());
 
-        // Dispatch the timer job — runs on 'game' queue
-        // The job handles: countdown ticks → deal → payouts → new round
-        ProcessRoundTimer::dispatch($round->id)->afterCommit();
-
-        Log::info("[Engine] Betting started for round {$round->id} ({$duration}s)");
+        // Dispatch the timer job — runs on 'game' queue.
+        // On shared hosting (Hostinger) there is no persistent worker, so this
+        // job will stay queued until a cron-based worker picks it up.
+        // Client-side countdown in game.js means the UI timer still shows
+        // immediately without waiting for this job.
+        // If Redis is down, fall back to the database queue.
+        try {
+            ProcessRoundTimer::dispatch($round->id)->afterCommit();
+            Log::info("[Engine] Betting started for round {$round->id} ({$duration}s) — job queued on redis");
+        } catch (\Throwable $e) {
+            Log::warning("[Engine] Redis queue failed, falling back to database queue: " . $e->getMessage());
+            ProcessRoundTimer::dispatch($round->id)->onConnection('database')->afterCommit();
+        }
     }
 }

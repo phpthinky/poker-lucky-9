@@ -3,7 +3,7 @@
 namespace App\Events;
 
 use Illuminate\Broadcasting\Channel;
-use Illuminate\Contracts\Broadcasting\ShouldBroadcast;
+use Illuminate\Contracts\Broadcasting\ShouldBroadcastNow;
 
 /**
  * Fired every second during the betting phase by ProcessRoundTimer job.
@@ -12,7 +12,7 @@ use Illuminate\Contracts\Broadcasting\ShouldBroadcast;
  * Broadcast channel: game-table (public)
  * Frontend listener:  .listen('.timer.tick', ...)
  */
-class TimerTick implements ShouldBroadcast
+class TimerTick implements ShouldBroadcastNow
 {
     public function __construct(
         public readonly int $roundId,

@@ -3,7 +3,7 @@
 namespace App\Events;
 
 use Illuminate\Broadcasting\Channel;
-use Illuminate\Contracts\Broadcasting\ShouldBroadcast;
+use Illuminate\Contracts\Broadcasting\ShouldBroadcastNow;
 
 /**
  * Fired once when cards are dealt (timer hits 0).
@@ -13,7 +13,7 @@ use Illuminate\Contracts\Broadcasting\ShouldBroadcast;
  * Broadcast channel: game-table (public)
  * Frontend listener:  .listen('.cards.dealt', ...)
  */
-class CardsDealt implements ShouldBroadcast
+class CardsDealt implements ShouldBroadcastNow
 {
     public function __construct(
         public readonly int    $roundId,

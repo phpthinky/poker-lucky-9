@@ -3,7 +3,7 @@
 namespace App\Events;
 
 use Illuminate\Broadcasting\Channel;
-use Illuminate\Contracts\Broadcasting\ShouldBroadcast;
+use Illuminate\Contracts\Broadcasting\ShouldBroadcastNow;
 use Illuminate\Queue\SerializesModels;
 
 /**
@@ -13,7 +13,7 @@ use Illuminate\Queue\SerializesModels;
  * Broadcast channel: game-table (public)
  * Frontend listener:  .listen('.round.started', ...)
  */
-class RoundStarted implements ShouldBroadcast
+class RoundStarted implements ShouldBroadcastNow
 {
     use SerializesModels;
 

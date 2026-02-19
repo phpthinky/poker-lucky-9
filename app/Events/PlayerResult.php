@@ -3,7 +3,7 @@
 namespace App\Events;
 
 use Illuminate\Broadcasting\PrivateChannel;
-use Illuminate\Contracts\Broadcasting\ShouldBroadcast;
+use Illuminate\Contracts\Broadcasting\ShouldBroadcastNow;
 
 /**
  * Fired once per player after payouts are calculated.
@@ -12,7 +12,7 @@ use Illuminate\Contracts\Broadcasting\ShouldBroadcast;
  * Channel:          player.{playerId}  (private — auth required)
  * Frontend listener: Echo.private(`player.${playerId}`).listen('.round.result', ...)
  */
-class PlayerResult implements ShouldBroadcast
+class PlayerResult implements ShouldBroadcastNow
 {
     public function __construct(
         public readonly int    $playerId,

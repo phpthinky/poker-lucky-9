@@ -72,7 +72,9 @@ function subscribeToGameTable() {
 
         .listen('.round.started', (data) => {
             console.log('[WS] round.started', data);
-            const isNewRound = !currentRound || currentRound.round_id !== data.round_id;
+            // REST API stores round as {id:…}, WS events use {round_id:…} — normalise before comparing
+            const myId       = currentRound ? (currentRound.id || currentRound.round_id) : null;
+            const isNewRound = !currentRound || myId !== data.round_id;
             currentRound     = data;
             dealingShown     = false;
 

@@ -3,7 +3,7 @@
 namespace App\Events;
 
 use Illuminate\Broadcasting\Channel;
-use Illuminate\Contracts\Broadcasting\ShouldBroadcast;
+use Illuminate\Contracts\Broadcasting\ShouldBroadcastNow;
 
 /**
  * Fired whenever any player adds chips (every click).
@@ -12,7 +12,7 @@ use Illuminate\Contracts\Broadcasting\ShouldBroadcast;
  * Broadcast channel: game-table (public)
  * Frontend listener:  .listen('.bet.placed', ...)
  */
-class BetPlaced implements ShouldBroadcast
+class BetPlaced implements ShouldBroadcastNow
 {
     public function __construct(
         public readonly int    $roundId,

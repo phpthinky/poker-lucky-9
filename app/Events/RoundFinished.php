@@ -3,7 +3,7 @@
 namespace App\Events;
 
 use Illuminate\Broadcasting\Channel;
-use Illuminate\Contracts\Broadcasting\ShouldBroadcast;
+use Illuminate\Contracts\Broadcasting\ShouldBroadcastNow;
 
 /**
  * Fired after all payouts are calculated and round is marked 'finished'.
@@ -13,7 +13,7 @@ use Illuminate\Contracts\Broadcasting\ShouldBroadcast;
  * Broadcast channel: game-table (public)
  * Frontend listener:  .listen('.round.finished', ...)
  */
-class RoundFinished implements ShouldBroadcast
+class RoundFinished implements ShouldBroadcastNow
 {
     public function __construct(
         public readonly int    $roundId,

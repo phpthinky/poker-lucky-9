@@ -257,37 +257,61 @@
 <div id="toast-container"></div>
 
     <script>
-// Auto guest login if no token exists
-(async function() {
-    const token = localStorage.getItem('auth_token');
-    
-    if (!token) {
-        try {
-            const guestId = 'guest_' + Math.random().toString(36).substring(2, 11);
-            const res = await fetch('/api/v1/guest/login', {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                    'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]').content
-                },
-                body: JSON.stringify({
-                    guest_id: guestId,
-                    player_name: 'Guest' + Math.floor(Math.random() * 9999)
-                })
-            });
-            
-            const data = await res.json();
-            
-            if (data.success && data.token) {
-                localStorage.setItem('auth_token', data.token);
-                console.log('[Auth] Guest logged in:', data.player.player_name);
-                
-                // Reload to apply token
-                window.location.reload();
-            }
-        } catch (err) {
-            console.error('[Auth] Guest login failed:', err);
+// ── Step 1 (sync): Apply stored player data to DOM before app.js/game.js load.
+// This is the key fix: Blade always renders data-player-id="0" because it uses
+// session auth, but we track players via localStorage tokens. Applying the stored
+// identity here means game.js sees the real player ID immediately on every visit.
+(function () {
+    var app = document.getElementById('game-app');
+    var pid = localStorage.getItem('player_id');
+    if (app && pid) {
+        app.dataset.playerId   = pid;
+        app.dataset.playerName = localStorage.getItem('player_name')    || 'Guest';
+        app.dataset.balance    = localStorage.getItem('player_balance') || '0';
+    }
+})();
+
+// ── Step 2 (async): Ensure we have a valid auth token (guest auto-login).
+(async function () {
+    if (localStorage.getItem('auth_token')) return; // already have a session
+
+    // Persist guest_id so the same player record is retrieved on every visit.
+    var guestId = localStorage.getItem('guest_id');
+    if (!guestId) {
+        guestId = 'guest_' + Math.random().toString(36).substring(2, 11) + '_' + Date.now();
+        localStorage.setItem('guest_id', guestId);
+    }
+
+    var defaultName = 'Guest' + Math.floor(Math.random() * 9000 + 1000);
+
+    try {
+        var res = await fetch('/api/v1/guest/login', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'Accept':       'application/json',
+                'X-CSRF-TOKEN': (document.querySelector('meta[name="csrf-token"]') || {}).content || '',
+            },
+            body: JSON.stringify({
+                guest_id:    guestId,
+                player_name: localStorage.getItem('player_name') || defaultName,
+            }),
+        });
+
+        var data = await res.json();
+
+        if (data.success && data.token) {
+            // Persist auth token and full player identity for future visits.
+            localStorage.setItem('auth_token',     data.token);
+            localStorage.setItem('player_id',      data.player.id);
+            localStorage.setItem('player_name',    data.player.player_name);
+            localStorage.setItem('player_balance', data.player.balance);
+
+            // Reload so app.js initialises Echo/Axios with the Bearer token in localStorage.
+            window.location.reload();
         }
+    } catch (err) {
+        console.error('[Auth] Guest login failed — game runs in spectator mode:', err);
     }
 })();
 </script>

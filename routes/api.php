@@ -31,14 +31,16 @@ Route::prefix('v1')->group(function () {
     // ── Public: Leaderboard (viewable without login) ──────────────
     Route::get('/leaderboard', [LeaderboardController::class, 'index']);
 
+    // ── Public: Game state (no login needed — auth is optional inside controller) ──
+    Route::get('/game/state', [GameController::class, 'state']);
+
     // ── Protected: Require Sanctum token ─────────────────────────
     Route::middleware('auth:sanctum')->group(function () {
 
         // Auth
         Route::post('/logout', [AuthController::class, 'logout']);
 
-        // Game
-        Route::get('/game/state',      [GameController::class, 'state']);
+        // Game (bet & clear still require auth so we know who placed the bet)
         Route::post('/game/bet',       [GameController::class, 'placeBet']);
         Route::post('/game/clear',     [GameController::class, 'clearBet']);
 

@@ -378,6 +378,8 @@ function updateBalanceDisplay() {
         var el = document.getElementById(id);
         if (el) el.textContent = Number(playerBalance).toLocaleString();
     });
+    // Keep localStorage in sync so the correct balance is shown on next page load.
+    localStorage.setItem('player_balance', playerBalance);
 }
 
 function setPlayerCount(n) {

@@ -59,12 +59,13 @@ class GameController extends Controller
             }
         }
 
-        // Player's bet on this round
-        $playerBet = null;
-        if ($request->user() && $roundData) {
+        // Player's bet on this round — auth is optional on this public route
+        $authedUser = auth('sanctum')->user();
+        $playerBet  = null;
+        if ($authedUser && $roundData) {
             $playerBet = RoundBet::where([
                 'round_id'  => $roundData['id'],
-                'player_id' => $request->user()->id,
+                'player_id' => $authedUser->id,
             ])->first();
         }
 

@@ -35,8 +35,17 @@ class GameController extends Controller
         $roundData = $this->redis->getRound();
 
         if (! $roundData) {
-            $round     = GameRound::latest()->first();
-            $roundData = $round ? $this->formatRound($round) : null;
+            // Prefer an active round (waiting/betting/dealing); fall back to latest (may be finished).
+            // If no round exists at all (fresh deploy), auto-create a waiting round so the
+            // frontend always gets a round and never shows "Loading..." on chip click.
+            $round = GameRound::active()->latest()->first()
+                  ?? GameRound::latest()->first();
+
+            if (! $round) {
+                $round = $this->engine->createWaitingRound();
+            }
+
+            $roundData = $this->formatRound($round);
         }
 
         // Timer: Redis stores the precise countdown.

@@ -37,7 +37,7 @@ use Illuminate\Support\Facades\Log;
  *   t=25:   Creates new waiting round → broadcasts RoundStarted(status=waiting)
  *
  * Run on queue: 'game'
- *   php artisan queue:work redis --queue=game,default
+ *   php artisan queue:work database --queue=game,default
  */
 class ProcessRoundTimer implements ShouldQueue
 {

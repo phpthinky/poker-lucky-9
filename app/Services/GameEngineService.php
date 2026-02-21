@@ -149,23 +149,17 @@ class GameEngineService
             'started_at'   => now(),
         ]);
 
-        // Cache new status in Redis immediately
+        // Update cached state
         $this->redis->setTimerEndsAt(now()->addSeconds($duration)->timestamp);
         $this->redis->updateRoundField('round_status', RoundStatus::Betting->value);
         $this->redis->updateRoundField('started_at', now()->toIso8601String());
 
-        // Dispatch the timer job — runs on 'game' queue.
+        // Dispatch the timer job — runs on 'game' queue (database connection).
         // On shared hosting (Hostinger) there is no persistent worker, so this
         // job will stay queued until a cron-based worker picks it up.
         // Client-side countdown in game.js means the UI timer still shows
         // immediately without waiting for this job.
-        // If Redis is down, fall back to the database queue.
-        try {
-            ProcessRoundTimer::dispatch($round->id)->afterCommit();
-            Log::info("[Engine] Betting started for round {$round->id} ({$duration}s) — job queued on redis");
-        } catch (\Throwable $e) {
-            Log::warning("[Engine] Redis queue failed, falling back to database queue: " . $e->getMessage());
-            ProcessRoundTimer::dispatch($round->id)->onConnection('database')->afterCommit();
-        }
+        ProcessRoundTimer::dispatch($round->id)->onConnection('database')->afterCommit();
+        Log::info("[Engine] Betting started for round {$round->id} ({$duration}s) — job queued on database");
     }
 }

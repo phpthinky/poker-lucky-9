@@ -62,7 +62,7 @@ class StartGame extends Command
         $this->info('The timer starts automatically when the first bet is placed.');
         $this->info('');
         $this->warn('Make sure the queue worker is running:');
-        $this->line('  php artisan queue:work redis --queue=game,default');
+        $this->line('  php artisan queue:work database --queue=game,default');
         $this->warn('Make sure Reverb is running:');
         $this->line('  php artisan reverb:start --port=8080');
 

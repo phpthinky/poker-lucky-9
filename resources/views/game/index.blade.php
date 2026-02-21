@@ -126,14 +126,36 @@
         @keyframes toastIn { from{transform:translateX(110%);opacity:0;}to{transform:translateX(0);opacity:1;} }
         @media(max-width:1024px) { .game-layout{grid-template-columns:1fr;} .side-panel{display:none;} }
         @media(max-width:576px) { .chip{width:44px;height:44px;font-size:.58rem;} .card-placeholder{width:54px;height:82px;font-size:1.1rem;} .hands-wrap{gap:24px;} }
+        /* ── Auth modal ─────────────────────────────────────────────────────── */
+        #auth-modal { display:none; position:fixed; inset:0; z-index:2000; background:rgba(4,10,18,.97); backdrop-filter:blur(8px); align-items:center; justify-content:center; padding:16px; }
+        #auth-modal.show { display:flex; }
+        .auth-box { background:var(--bg-panel); border:1px solid var(--gold-border); border-radius:16px; width:100%; max-width:380px; padding:32px 28px; box-shadow:var(--shadow); }
+        .auth-logo { font-family:'Cinzel',serif; font-size:1.45rem; font-weight:700; color:var(--gold); text-align:center; margin-bottom:4px; text-shadow:0 0 24px rgba(240,192,64,.3); }
+        .auth-sub { text-align:center; font-size:.76rem; color:var(--text-dim); margin-bottom:22px; }
+        .auth-tabs { display:flex; border-bottom:1px solid var(--dim-border); margin-bottom:22px; gap:2px; }
+        .auth-tab { flex:1; text-align:center; padding:8px 4px; font-size:.75rem; font-family:'Cinzel',serif; letter-spacing:.08em; cursor:pointer; color:var(--text-dim); border-bottom:2px solid transparent; transition:all .2s; }
+        .auth-tab.active { color:var(--gold); border-bottom-color:var(--gold); }
+        .auth-field { margin-bottom:13px; }
+        .auth-field label { display:block; font-size:.68rem; color:var(--text-dim); margin-bottom:5px; letter-spacing:.05em; text-transform:uppercase; }
+        .auth-field input { width:100%; background:rgba(0,0,0,.45); border:1px solid rgba(255,255,255,.1); border-radius:8px; padding:9px 12px; color:var(--text); font-size:.85rem; outline:none; transition:border-color .2s; font-family:'DM Sans',sans-serif; }
+        .auth-field input:focus { border-color:rgba(240,192,64,.45); background:rgba(0,0,0,.6); }
+        .auth-error { font-size:.72rem; color:var(--red); min-height:1.1rem; margin-bottom:12px; text-align:center; line-height:1.4; }
+        .btn-auth { width:100%; background:linear-gradient(135deg,#1a4020 0%,#0d2e18 100%); border:1px solid rgba(56,201,122,.4); border-radius:8px; padding:10px; color:var(--green); font-family:'Cinzel',serif; font-size:.8rem; letter-spacing:.1em; cursor:pointer; transition:all .2s; }
+        .btn-auth:hover { background:linear-gradient(135deg,#214e28 0%,#122e1d 100%); border-color:var(--green); box-shadow:0 0 16px rgba(56,201,122,.15); }
+        .btn-auth:disabled { opacity:.45; cursor:not-allowed; }
+        /* ── Header logout ───────────────────────────────────────────────────── */
+        .btn-logout { background:transparent; border:1px solid rgba(255,77,94,.3); color:rgba(255,77,94,.7); border-radius:20px; padding:4px 14px; font-size:.68rem; letter-spacing:.05em; cursor:pointer; transition:all .2s; white-space:nowrap; }
+        .btn-logout:hover { background:rgba(255,77,94,.1); border-color:var(--red); color:var(--red); }
+        .header-player { font-size:.72rem; color:var(--text-dim); }
+        .header-player strong { color:var(--text); }
     </style>
 </head>
 <body>
 
 <div id="game-app"
-     data-player-id="{{ auth()->id() ?? 0 }}"
-     data-player-name="{{ auth()->user()?->player_name ?? 'Guest' }}"
-     data-balance="{{ auth()->user()?->balance ?? 0 }}"
+     data-player-id="0"
+     data-player-name=""
+     data-balance="0"
      data-result-duration="{{ config('game.result_duration', 5) }}">
 
 <div class="game-layout">
@@ -143,7 +165,11 @@
             <div class="player-count"><i class="bi bi-people-fill"></i> <strong id="player-count">0</strong> online</div>
             <div id="next-round-wrapper" style="display:none;font-size:.7rem;color:var(--text-muted);">Next round in <span id="next-round-seconds" style="color:var(--gold-dim);font-family:'Cinzel',serif;">5s</span></div>
         </div>
-        <div class="balance-pill"><i class="bi bi-coin me-1"></i><span id="player-balance">{{ auth()->user()?->balance ?? 0 }}</span><span style="opacity:.6;font-size:.75em;margin-left:4px;">WPUFF</span></div>
+        <div style="display:flex;align-items:center;gap:10px;">
+            <div class="header-player"><strong id="header-player-name"></strong></div>
+            <div class="balance-pill"><i class="bi bi-coin me-1"></i><span id="player-balance">0</span><span style="opacity:.6;font-size:.75em;margin-left:4px;">WPUFF</span></div>
+            <button class="btn-logout" onclick="doLogout()"><i class="bi bi-box-arrow-right me-1"></i>Logout</button>
+        </div>
     </header>
 
     <aside class="side-panel">
@@ -212,9 +238,9 @@
         <div class="panel">
             <div class="panel-header">👤 Your Stats</div>
             <div class="panel-body">
-                <div class="stat-row"><span class="stat-label">Balance</span><span class="stat-val" style="color:var(--green);"><span id="player-balance-side">{{ auth()->user()?->balance ?? 0 }}</span><span style="font-size:.65em;opacity:.6;"> WPUFF</span></span></div>
-                <div class="stat-row"><span class="stat-label">Name</span><span class="stat-val">{{ auth()->user()?->player_name ?? 'Guest' }}</span></div>
-                <div class="stat-row"><span class="stat-label">Games</span><span class="stat-val">{{ auth()->user()?->total_games_played ?? 0 }}</span></div>
+                <div class="stat-row"><span class="stat-label">Balance</span><span class="stat-val" style="color:var(--green);"><span id="player-balance-side">0</span><span style="font-size:.65em;opacity:.6;"> WPUFF</span></span></div>
+                <div class="stat-row"><span class="stat-label">Name</span><span class="stat-val" id="stat-player-name">—</span></div>
+                <div class="stat-row"><span class="stat-label">Games</span><span class="stat-val" id="stat-games-played">—</span></div>
             </div>
         </div>
         <div class="panel">
@@ -256,64 +282,196 @@
 
 <div id="toast-container"></div>
 
+<!-- ── Auth modal ──────────────────────────────────────────────────────────── -->
+<div id="auth-modal">
+    <div class="auth-box">
+        <div class="auth-logo">🐧 Lucky Puffin</div>
+        <div class="auth-sub">Sign in to place bets and track your balance</div>
+
+        <div class="auth-tabs">
+            <div class="auth-tab active" id="tab-login"    onclick="showAuthTab('login')">Login</div>
+            <div class="auth-tab"        id="tab-register" onclick="showAuthTab('register')">Register</div>
+        </div>
+
+        <!-- Login form -->
+        <div id="form-login">
+            <div class="auth-field">
+                <label>Email</label>
+                <input type="email" id="login-email" placeholder="your@email.com" onkeydown="if(event.key==='Enter')doLogin()">
+            </div>
+            <div class="auth-field">
+                <label>Password</label>
+                <input type="password" id="login-password" placeholder="••••••••" onkeydown="if(event.key==='Enter')doLogin()">
+            </div>
+            <div class="auth-error" id="login-error"></div>
+            <button class="btn-auth" id="btn-login" onclick="doLogin()">Enter the Table</button>
+        </div>
+
+        <!-- Register form -->
+        <div id="form-register" style="display:none;">
+            <div class="auth-field">
+                <label>Display Name</label>
+                <input type="text" id="reg-name" placeholder="e.g. LuckyPuffin88" onkeydown="if(event.key==='Enter')doRegister()">
+            </div>
+            <div class="auth-field">
+                <label>Email</label>
+                <input type="email" id="reg-email" placeholder="your@email.com" onkeydown="if(event.key==='Enter')doRegister()">
+            </div>
+            <div class="auth-field">
+                <label>Password</label>
+                <input type="password" id="reg-password" placeholder="Min 8 characters" onkeydown="if(event.key==='Enter')doRegister()">
+            </div>
+            <div class="auth-field">
+                <label>Confirm Password</label>
+                <input type="password" id="reg-confirm" placeholder="Repeat password" onkeydown="if(event.key==='Enter')doRegister()">
+            </div>
+            <div class="auth-error" id="reg-error"></div>
+            <button class="btn-auth" id="btn-register" onclick="doRegister()">Create Account</button>
+        </div>
+    </div>
+</div>
+
     <script>
-// ── Step 1 (sync): Apply stored player data to DOM before app.js/game.js load.
-// This is the key fix: Blade always renders data-player-id="0" because it uses
-// session auth, but we track players via localStorage tokens. Applying the stored
-// identity here means game.js sees the real player ID immediately on every visit.
+// ── Auth: show modal if not logged in, otherwise apply stored identity to DOM ──
 (function () {
+    var token = localStorage.getItem('auth_token');
+
+    if (!token) {
+        // Not logged in — show auth modal, game scripts still load but API calls
+        // will 401 without a token (betting is gated server-side anyway).
+        document.getElementById('auth-modal').classList.add('show');
+        return;
+    }
+
+    // Apply stored player identity to data-attributes so game.js reads correct values.
     var app = document.getElementById('game-app');
-    var pid = localStorage.getItem('player_id');
-    if (app && pid) {
-        app.dataset.playerId   = pid;
-        app.dataset.playerName = localStorage.getItem('player_name')    || 'Guest';
+    if (app) {
+        app.dataset.playerId   = localStorage.getItem('player_id')      || '0';
+        app.dataset.playerName = localStorage.getItem('player_name')    || '';
         app.dataset.balance    = localStorage.getItem('player_balance') || '0';
     }
+
+    // Populate header + sidebar from localStorage immediately (game.js will sync from server).
+    var name = localStorage.getItem('player_name') || '';
+    var bal  = localStorage.getItem('player_balance') || '0';
+    var hn = document.getElementById('header-player-name');   if (hn) hn.textContent = name;
+    var sn = document.getElementById('stat-player-name');     if (sn) sn.textContent = name;
+    var pb = document.getElementById('player-balance');        if (pb) pb.textContent = bal;
+    var ps = document.getElementById('player-balance-side');   if (ps) ps.textContent = bal;
 })();
 
-// ── Step 2 (async): Ensure we have a valid auth token (guest auto-login).
-(async function () {
-    if (localStorage.getItem('auth_token')) return; // already have a session
+// ── Auth tab switcher ──────────────────────────────────────────────────────────
+function showAuthTab(tab) {
+    document.getElementById('form-login').style.display    = tab === 'login'    ? '' : 'none';
+    document.getElementById('form-register').style.display = tab === 'register' ? '' : 'none';
+    document.getElementById('tab-login').classList.toggle('active',    tab === 'login');
+    document.getElementById('tab-register').classList.toggle('active', tab === 'register');
+}
 
-    // Persist guest_id so the same player record is retrieved on every visit.
-    var guestId = localStorage.getItem('guest_id');
-    if (!guestId) {
-        guestId = 'guest_' + Math.random().toString(36).substring(2, 11) + '_' + Date.now();
-        localStorage.setItem('guest_id', guestId);
-    }
-
-    var defaultName = 'Guest' + Math.floor(Math.random() * 9000 + 1000);
+// ── Login ──────────────────────────────────────────────────────────────────────
+async function doLogin() {
+    var btn   = document.getElementById('btn-login');
+    var errEl = document.getElementById('login-error');
+    errEl.textContent = '';
+    btn.disabled = true; btn.textContent = 'Logging in…';
 
     try {
-        var res = await fetch('/api/v1/guest/login', {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/json',
-                'Accept':       'application/json',
-                'X-CSRF-TOKEN': (document.querySelector('meta[name="csrf-token"]') || {}).content || '',
-            },
+        var res  = await fetch('/api/v1/login', {
+            method:  'POST',
+            headers: { 'Content-Type': 'application/json', 'Accept': 'application/json',
+                       'X-CSRF-TOKEN': (document.querySelector('meta[name="csrf-token"]') || {}).content || '' },
             body: JSON.stringify({
-                guest_id:    guestId,
-                player_name: localStorage.getItem('player_name') || defaultName,
+                email:    document.getElementById('login-email').value.trim(),
+                password: document.getElementById('login-password').value,
             }),
         });
-
         var data = await res.json();
 
         if (data.success && data.token) {
-            // Persist auth token and full player identity for future visits.
             localStorage.setItem('auth_token',     data.token);
             localStorage.setItem('player_id',      data.player.id);
             localStorage.setItem('player_name',    data.player.player_name);
             localStorage.setItem('player_balance', data.player.balance);
-
-            // Reload so app.js initialises Echo/Axios with the Bearer token in localStorage.
             window.location.reload();
+        } else {
+            errEl.textContent = data.message || 'Invalid email or password.';
         }
-    } catch (err) {
-        console.error('[Auth] Guest login failed — game runs in spectator mode:', err);
+    } catch (e) {
+        errEl.textContent = 'Network error — please try again.';
     }
-})();
+
+    btn.disabled = false; btn.textContent = 'Enter the Table';
+}
+
+// ── Register ───────────────────────────────────────────────────────────────────
+async function doRegister() {
+    var btn   = document.getElementById('btn-register');
+    var errEl = document.getElementById('reg-error');
+    errEl.textContent = '';
+
+    var name    = document.getElementById('reg-name').value.trim();
+    var email   = document.getElementById('reg-email').value.trim();
+    var pass    = document.getElementById('reg-password').value;
+    var confirm = document.getElementById('reg-confirm').value;
+
+    if (!name || !email || !pass) { errEl.textContent = 'All fields are required.'; return; }
+    if (pass !== confirm)         { errEl.textContent = 'Passwords do not match.'; return; }
+    if (pass.length < 8)          { errEl.textContent = 'Password must be at least 8 characters.'; return; }
+
+    btn.disabled = true; btn.textContent = 'Creating account…';
+
+    try {
+        var res  = await fetch('/api/v1/register', {
+            method:  'POST',
+            headers: { 'Content-Type': 'application/json', 'Accept': 'application/json',
+                       'X-CSRF-TOKEN': (document.querySelector('meta[name="csrf-token"]') || {}).content || '' },
+            body: JSON.stringify({
+                player_name:           name,
+                email:                 email,
+                password:              pass,
+                password_confirmation: confirm,
+            }),
+        });
+        var data = await res.json();
+
+        if (data.success && data.token) {
+            localStorage.setItem('auth_token',     data.token);
+            localStorage.setItem('player_id',      data.player.id);
+            localStorage.setItem('player_name',    data.player.player_name);
+            localStorage.setItem('player_balance', data.player.balance);
+            window.location.reload();
+        } else {
+            if (data.errors) {
+                errEl.textContent = Object.values(data.errors).flat().join(' ');
+            } else {
+                errEl.textContent = data.message || 'Registration failed.';
+            }
+        }
+    } catch (e) {
+        errEl.textContent = 'Network error — please try again.';
+    }
+
+    btn.disabled = false; btn.textContent = 'Create Account';
+}
+
+// ── Logout ─────────────────────────────────────────────────────────────────────
+async function doLogout() {
+    var token = localStorage.getItem('auth_token');
+    if (token) {
+        try {
+            await fetch('/api/v1/logout', {
+                method:  'POST',
+                headers: { 'Accept': 'application/json',
+                           'Authorization': 'Bearer ' + token,
+                           'X-CSRF-TOKEN': (document.querySelector('meta[name="csrf-token"]') || {}).content || '' },
+            });
+        } catch (e) { /* server-side revoke failed — local clear is enough */ }
+    }
+    ['auth_token','player_id','player_name','player_balance','guest_id'].forEach(function (k) {
+        localStorage.removeItem(k);
+    });
+    window.location.reload();
+}
 </script>
 
 <script src="{{ mix('js/app.js') }}"></script>

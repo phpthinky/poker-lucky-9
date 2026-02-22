@@ -163,23 +163,35 @@ async function fetchInitialState() {
         }
 
         if (round) {
-            currentRound = round;
-            dealingShown = false;
+            // Guard: never regress to an older round.
+            // If a WS round.started already advanced currentRound to round N,
+            // ignore any fetchInitialState response that returns round N-1
+            // (can happen when the request was in-flight during a round transition).
+            const currentId = currentRound
+                ? (currentRound.id || currentRound.round_id || 0)
+                : 0;
+            const serverId = round.id || 0;
 
-            if (round.round_status === 'betting' && round.round_ends_at) {
-                enableBetting();
-                startLocalCountdown(round.round_ends_at);
-            }
+            if (serverId >= currentId) {
+                currentRound = round;
+                dealingShown = false;
 
-            if (round.round_status === 'dealing' && round.player_cards && round.player_cards.length) {
-                dealingShown = true;
-                disableBetting();
-                showSharedCards({
-                    player_cards: round.player_cards,
-                    banker_cards: round.banker_cards,
-                    player_total: round.player_total,
-                    banker_total: round.banker_total,
-                });
+                if (round.round_status === 'waiting') {
+                    setTimerLabel('Waiting for first bet...');
+                    enableBetting();
+                } else if (round.round_status === 'betting' && round.round_ends_at) {
+                    enableBetting();
+                    startLocalCountdown(round.round_ends_at);
+                } else if (round.round_status === 'dealing' && round.player_cards && round.player_cards.length) {
+                    dealingShown = true;
+                    disableBetting();
+                    showSharedCards({
+                        player_cards: round.player_cards,
+                        banker_cards: round.banker_cards,
+                        player_total: round.player_total,
+                        banker_total: round.banker_total,
+                    });
+                }
             }
         }
 
@@ -245,7 +257,7 @@ async function handleBetClick(box) {
 
         showToast('+' + selectedChip + ' on ' + betType.toUpperCase());
     } catch (err) {
-        // Roll back
+        // Roll back optimistic update
         currentBets[betType] -= selectedChip;
         playerBalance        += selectedChip;
         hasBetThisRound       = Object.values(currentBets).some(function (v) { return v > 0; });
@@ -256,6 +268,9 @@ async function handleBetClick(box) {
             : 'Bet failed — try again';
         showToast(msg);
         console.error('[Bet]', err);
+        // Sync with server — currentRound may be stale (wrong round_id).
+        // This also triggers server-side dealing if the round_ends_at has passed.
+        fetchInitialState();
     }
 }
 

@@ -44,6 +44,7 @@ class GameRound extends Model
         'is_banker_pair',
         'is_random_pair',
         'started_at',
+        'round_ends_at',
         'dealing_ends_at',
         'finished_at',
     ];
@@ -58,6 +59,7 @@ class GameRound extends Model
         'is_random_pair'  => 'boolean',
         'round_status'    => RoundStatus::class,
         'started_at'      => 'datetime',
+        'round_ends_at'   => 'datetime',
         'dealing_ends_at' => 'datetime',
         'finished_at'     => 'datetime',
     ];
@@ -77,17 +79,15 @@ class GameRound extends Model
     // ─── COMPUTED ATTRIBUTES ────────────────────────────────────
 
     /**
-     * Seconds remaining in betting phase (calculated from timestamp, not stored).
+     * Seconds remaining in betting phase — calculated directly from round_ends_at.
      */
     public function getTimerRemainingAttribute(): int
     {
-        if ($this->round_status !== RoundStatus::Betting || ! $this->started_at) {
+        if ($this->round_status !== RoundStatus::Betting || ! $this->round_ends_at) {
             return 0;
         }
 
-        $elapsed = now()->diffInSeconds($this->started_at, absolute: true);
-
-        return max(0, config('game.betting_duration') - $elapsed);
+        return max(0, (int) now()->diffInSeconds($this->round_ends_at, false));
     }
 
     /**

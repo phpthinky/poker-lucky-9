@@ -19,11 +19,12 @@ let selectedChip    = 0;
 let hasBetThisRound = false;
 let dealingShown    = false;
 
-// Client-side countdown — fires immediately when betting starts, even on shared
-// hosting where the queue worker (ProcessRoundTimer) may not be running yet.
-// Server TimerTick WS events correct it whenever they do arrive.
-let localCountdownTimer     = null;
-let localCountdownRemaining = 0;
+// Client-side countdown driven by round_ends_at (UTC ISO string from server).
+// Recalculates remaining each tick from the authoritative timestamp so it
+// stays accurate across tab-sleep, network jitter, etc.
+// When it hits 0 it calls fetchInitialState() to trigger server-side dealing.
+let localCountdownTimer  = null;
+let currentRoundEndsAt   = null;   // ISO string; null when round is not betting
 
 const API_BASE = '/api/v1';
 
@@ -78,7 +79,6 @@ function subscribeToGameTable() {
 
         .listen('.round.started', (data) => {
             console.log('[WS] round.started', data);
-            // REST API stores round as {id:…}, WS events use {round_id:…} — normalise before comparing
             const myId       = currentRound ? (currentRound.id || currentRound.round_id) : null;
             const isNewRound = !currentRound || myId !== data.round_id;
             currentRound     = data;
@@ -87,23 +87,20 @@ function subscribeToGameTable() {
             if (isNewRound) {
                 stopLocalCountdown();
                 clearBets();
-                hideOverlays();
+                // Do NOT call hideOverlays() here — card animation / result overlay
+                // manage their own lifecycle (showSharedCards timeout, showResult countdown).
             }
 
-            if (data.status === 'betting') {
+            if (data.status === 'betting' && data.round_ends_at) {
                 enableBetting();
-                startLocalCountdown(data.timer_seconds);
+                startLocalCountdown(data.round_ends_at);
             } else {
                 setTimerLabel('Waiting for first bet...');
                 enableBetting();
             }
         })
 
-        .listen('.timer.tick', (data) => {
-            // Sync local counter with authoritative server value
-            localCountdownRemaining = data.seconds_remaining;
-            updateTimerDisplay(data.seconds_remaining);
-        })
+        // .timer.tick removed — countdown is now driven entirely by round_ends_at timestamp.
 
         .listen('.bet.placed', (data) => {
             addActivityItem('\uD83C\uDFB2 ' + data.player_name + ' bet ' + data.total_bet + ' WPUFF');
@@ -169,9 +166,9 @@ async function fetchInitialState() {
             currentRound = round;
             dealingShown = false;
 
-            if (round.round_status === 'betting') {
+            if (round.round_status === 'betting' && round.round_ends_at) {
                 enableBetting();
-                startLocalCountdown(round.timer_remaining || 0);
+                startLocalCountdown(round.round_ends_at);
             }
 
             if (round.round_status === 'dealing' && round.player_cards && round.player_cards.length) {
@@ -237,11 +234,13 @@ async function handleBetClick(box) {
             updateBalanceDisplay();
         }
 
-        // If this bet just kicked off the betting phase, start the local countdown
-        // immediately — on shared hosting the queue worker may not fire for a while.
-        if (wasWaiting && res.data.round_status === 'betting') {
-            currentRound.round_status = 'betting';
-            startLocalCountdown(res.data.timer_remaining || 20);
+        // If this bet just started the betting phase, record the end timestamp.
+        // RoundStarted WS event fires at the same time (from startBetting()), but
+        // the HTTP response may arrive first — startLocalCountdown is idempotent.
+        if (wasWaiting && res.data.round_status === 'betting' && res.data.round_ends_at) {
+            currentRound.round_status  = 'betting';
+            currentRound.round_ends_at = res.data.round_ends_at;
+            startLocalCountdown(res.data.round_ends_at);
         }
 
         showToast('+' + selectedChip + ' on ' + betType.toUpperCase());
@@ -379,32 +378,45 @@ function disableBetting() {
 }
 
 // ── Local countdown ───────────────────────────────────────────────────────────
-// Drives the on-screen timer without depending on WS TimerTick events.
-// Essential on shared hosting (Hostinger) where a persistent queue worker cannot
-// run — the bet response tells us how many seconds remain and we count down here.
-// Server-sent TimerTick events simply overwrite localCountdownRemaining to stay in sync.
+// Driven by the authoritative round_ends_at UTC timestamp from the server.
+// Recalculates remaining time every 500ms so it stays accurate through
+// tab-sleep, clock drift, and network delays.
+//
+// When it hits 0 → calls fetchInitialState() which triggers the atomic
+// dealing transition on the server (no cron/queue needed).
+//
+// Idempotent: calling with the same roundEndsAt while already running is a no-op.
 
-function startLocalCountdown(seconds) {
+function startLocalCountdown(roundEndsAt) {
+    if (!roundEndsAt) return;
+    // Don't restart if we're already counting down to the same end time.
+    if (roundEndsAt === currentRoundEndsAt && localCountdownTimer) return;
+
     stopLocalCountdown();
-    localCountdownRemaining = seconds;
-    updateTimerDisplay(localCountdownRemaining);
+    currentRoundEndsAt = roundEndsAt;
 
-    localCountdownTimer = setInterval(function () {
-        localCountdownRemaining--;
-        if (localCountdownRemaining <= 0) {
-            localCountdownRemaining = 0;
-            stopLocalCountdown();
-            setTimerLabel('Waiting for cards...');
+    var tick = function () {
+        var remaining = Math.round((new Date(currentRoundEndsAt) - Date.now()) / 1000);
+
+        if (remaining <= 0) {
+            localCountdownTimer = null;
+            setTimerLabel('Dealing cards...');
+            // Trigger server-side dealing — the first caller wins the atomic race.
+            fetchInitialState();
             return;
         }
-        updateTimerDisplay(localCountdownRemaining);
-    }, 1000);
+
+        updateTimerDisplay(remaining);
+        localCountdownTimer = setTimeout(tick, 500);
+    };
+
+    tick();
 }
 
 function stopLocalCountdown() {
-    clearInterval(localCountdownTimer);
-    localCountdownTimer     = null;
-    localCountdownRemaining = 0;
+    clearTimeout(localCountdownTimer);
+    localCountdownTimer = null;
+    currentRoundEndsAt  = null;
 }
 
 function updateTimerDisplay(seconds) {

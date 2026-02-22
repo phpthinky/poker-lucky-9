@@ -3,7 +3,6 @@
 namespace App\Http\Controllers;
 
 use App\Models\ActivityFeed;
-use Carbon\Carbon;
 use App\Models\GameRound;
 use App\Models\Player;
 use App\Models\RoundBet;
@@ -25,73 +24,53 @@ class GameController extends Controller
 
     /**
      * Returns everything the frontend needs in one call.
-     * Redis-first for the round, DB for player-specific data.
+     * Always reads from DB — no Redis round cache.
+     *
+     * Also acts as the dealing trigger: if the current round's betting
+     * period has expired, this request atomically transitions it to dealing,
+     * runs payouts, and starts the next waiting round — all inline.
      *
      * GET /api/v1/game/state
      */
     public function state(Request $request): JsonResponse
     {
-        // Round: Redis first (fast), fall back to DB
-        $roundData = $this->redis->getRound();
+        // Always prefer an active round (waiting/betting/dealing) over finished.
+        $round = GameRound::active()->latest()->first()
+              ?? GameRound::latest()->first();
 
-        if (! $roundData) {
-            // Prefer an active round (waiting/betting/dealing); fall back to latest (may be finished).
-            // If no round exists at all (fresh deploy), auto-create a waiting round so the
-            // frontend always gets a round and never shows "Loading..." on chip click.
+        if (! $round) {
+            $round = $this->engine->createWaitingRound();
+        }
+
+        // ── Atomic dealing trigger ──────────────────────────────────────────
+        // First request after round_ends_at wins the race. All others get the
+        // already-transitioned round. No cron, no queue, no race condition.
+        if ($round->round_status === RoundStatus::Betting
+            && $round->round_ends_at
+            && now()->gte($round->round_ends_at)
+        ) {
+            $this->engine->attemptDeal($round);
+            // Reload — round is now dealing/finished and a new waiting round may exist
             $round = GameRound::active()->latest()->first()
                   ?? GameRound::latest()->first();
-
-            if (! $round) {
-                $round = $this->engine->createWaitingRound();
-            }
-
-            $roundData = $this->formatRound($round);
         }
 
-        // Timer: Redis stores the precise countdown.
-        // If Redis is down, recalculate from DB started_at timestamp.
-        if ($roundData) {
-            $timerFromRedis = $this->redis->getTimerRemaining();
-
-            if ($timerFromRedis > 0) {
-                $roundData['timer_remaining'] = $timerFromRedis;
-            } elseif (
-                ($roundData['round_status'] ?? '') === 'betting' &&
-                ! empty($roundData['started_at'])
-            ) {
-                // Redis unavailable — compute from DB timestamp
-                $elapsed  = now()->diffInSeconds(\Carbon\Carbon::parse($roundData['started_at']));
-                $duration = config('game.betting_duration', 20);
-                $roundData['timer_remaining'] = max(0, $duration - $elapsed);
-            } else {
-                $roundData['timer_remaining'] = 0;
-            }
-        }
+        $roundData = $this->formatRound($round);
 
         // Player's bet on this round — auth is optional on this public route
         $authedUser = auth('sanctum')->user();
         $playerBet  = null;
-        if ($authedUser && $roundData) {
+        if ($authedUser) {
             $playerBet = RoundBet::where([
-                'round_id'  => $roundData['id'],
+                'round_id'  => $round->id,
                 'player_id' => $authedUser->id,
             ])->first();
         }
 
-        // Recent activity
-        $recentActivity = ActivityFeed::recent(5)->get();
-
-        // Leaderboard
-        $leaderboard = Player::leaderboard(5)->get([
-            'id', 'player_name', 'balance',
-        ]);
-
-        // Active players: Redis first, fall back to counting DB bets for current round
+        // Active players: cache first, fall back to DB bets
         $activePlayers = $this->redis->getActivePlayers();
-
-        if (empty($activePlayers) && $roundData) {
-            // Redis unavailable — count who has a bet in the current round
-            $activePlayers = RoundBet::where('round_id', $roundData['id'])
+        if (empty($activePlayers)) {
+            $activePlayers = RoundBet::where('round_id', $round->id)
                 ->pluck('player_name', 'player_id')
                 ->toArray();
         }
@@ -100,12 +79,10 @@ class GameController extends Controller
             'success'         => true,
             'current_round'   => $roundData,
             'player_bet'      => $playerBet,
-            // Authoritative balance so the frontend can sync on page load/refresh
-            // without relying solely on localStorage (which can drift after bets).
             'player_balance'  => $authedUser ? $authedUser->fresh()->balance : null,
             'active_players'  => $activePlayers,
-            'recent_activity' => $recentActivity,
-            'leaderboard'     => $leaderboard,
+            'recent_activity' => ActivityFeed::recent(5)->get(),
+            'leaderboard'     => Player::leaderboard(5)->get(['id', 'player_name', 'balance']),
             'timestamp'       => now()->timestamp,
         ]);
     }
@@ -156,6 +133,15 @@ class GameController extends Controller
 
         $round = GameRound::findOrFail($validated['round_id']);
 
+        // If the betting window just closed, reject and trigger dealing immediately.
+        if ($round->round_status === RoundStatus::Betting
+            && $round->round_ends_at
+            && now()->gte($round->round_ends_at)
+        ) {
+            $this->engine->attemptDeal($round);
+            return $this->error('Betting time is up — cards are being dealt', 422);
+        }
+
         if (! $round->round_status->canBet()) {
             return $this->error('Betting is closed for this round', 422);
         }
@@ -169,18 +155,17 @@ class GameController extends Controller
             totalBet: $totalBet,
         );
 
-        // Refresh the round so we have the latest status + timer after startBetting() ran.
+        // Refresh so we have round_ends_at set by startBetting().
         $round->refresh();
 
         return response()->json([
-            'success'         => true,
-            'message'         => 'Bet placed!',
-            'bet'             => $bet,
-            'balance'         => $player->fresh()->balance,
-            // Lets the frontend kick off a local countdown immediately — critical on
-            // shared hosting where the queue worker may not be running yet.
-            'round_status'    => $round->round_status->value,
-            'timer_remaining' => $round->timer_remaining,
+            'success'        => true,
+            'message'        => 'Bet placed!',
+            'bet'            => $bet,
+            'balance'        => $player->fresh()->balance,
+            'round_status'   => $round->round_status->value,
+            // ISO 8601 UTC — frontend calculates remaining = (new Date(round_ends_at) - Date.now()) / 1000
+            'round_ends_at'  => $round->round_ends_at?->toIso8601String(),
         ]);
     }
 
@@ -269,6 +254,9 @@ class GameController extends Controller
     private function formatRound(GameRound $round): array
     {
         return array_merge($round->toArray(), [
+            // ISO 8601 UTC timestamp — frontend calculates countdown from this
+            'round_ends_at'  => $round->round_ends_at?->toIso8601String(),
+            // Seconds remaining — convenience alias (computed from round_ends_at)
             'timer_remaining' => $round->timer_remaining,
         ]);
     }

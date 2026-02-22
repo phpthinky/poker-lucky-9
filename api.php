@@ -3,6 +3,27 @@
  * Lucky Puffin - API (Shared Round System)
  * All players bet on the same cards!
  */
+if (!isset($_SERVER['HTTP_REFERER']) || strpos($_SERVER['HTTP_REFERER'], 'democodes.online') === false) {
+    http_response_code(403);
+    exit('Forbidden');
+}
+session_start();
+
+if (!isset($_SESSION['rate_limit'])) {
+    $_SESSION['rate_limit'] = [];
+}
+
+$now = time();
+$_SESSION['rate_limit'] = array_filter($_SESSION['rate_limit'], function($t) use ($now) {
+    return $t > $now - 5;
+});
+
+if (count($_SESSION['rate_limit']) > 20) {
+    http_response_code(429);
+    exit('Too many requests');
+}
+
+$_SESSION['rate_limit'][] = $now;
 
 require_once 'config.php';
 require_once 'Player.php';
@@ -22,7 +43,25 @@ try {
     $action = $_GET['action'] ?? ($input['action'] ?? '');
     
     switch ($action) {
-        
+        case 'debugRound':
+    $roundId = $input['roundId'] ?? 0;
+    $db = Database::getInstance();
+    
+    if ($roundId) {
+        $round = $db->fetch("SELECT * FROM game_rounds WHERE id = ?", [$roundId]);
+    } else {
+        $round = $db->fetch("SELECT * FROM game_rounds ORDER BY id DESC LIMIT 1");
+    }
+    
+    $bets = $db->fetchAll("SELECT * FROM round_bets WHERE round_id = ?", [$round['id']]);
+    
+    $response['success'] = true;
+    $response['data'] = [
+        'round' => $round,
+        'bet_count' => count($bets),
+        'bets' => $bets
+    ];
+    break;
         case 'getPlayer':
             $guestId = $input['guestId'] ?? '';
             $playerName = $input['playerName'] ?? null;
@@ -53,8 +92,7 @@ try {
             $response['success'] = true;
             $response['data'] = $currentRound;
             break;
-            
-case 'placeBet':
+            case 'placeBet':
     // Place bet on current round
     $playerId = $input['playerId'] ?? 0;
     $playerName = $input['playerName'] ?? 'Guest';
@@ -65,31 +103,22 @@ case 'placeBet':
         throw new Exception('Invalid player ID');
     }
     
-    // Get current round
+    // Get current round if not provided
     if (!$roundId) {
         $currentRound = $player->getCurrentRound();
         $roundId = $currentRound['id'];
     }
     
-    // Check if round exists
-    $round = $player->db->fetch("SELECT * FROM game_rounds WHERE id = ?", [$roundId]);
+    // Check round status - allow betting on waiting rounds
+    $db = Database::getInstance();
+    $round = $db->fetch("SELECT round_status FROM game_rounds WHERE id = ?", [$roundId]);
+    
     if (!$round) {
         throw new Exception('Round not found');
     }
     
-    // Allow betting on waiting rounds - they will become betting
-    if ($round['round_status'] === 'waiting') {
-        // Start the round immediately
-        $player->db->query(
-            "UPDATE game_rounds 
-             SET round_status = 'betting', 
-                 timer_remaining = 20, 
-                 started_at = NOW() 
-             WHERE id = ?",
-            [$roundId]
-        );
-        error_log("Auto-started round $roundId from waiting to betting");
-    } else if ($round['round_status'] !== 'betting') {
+    // Allow betting on waiting or betting rounds
+    if (!in_array($round['round_status'], ['waiting', 'betting'])) {
         throw new Exception('Betting is closed for this round');
     }
     
@@ -99,7 +128,6 @@ case 'placeBet':
     $response['success'] = true;
     $response['message'] = 'Bet placed successfully';
     break;
-    
             
         case 'updateTimer':
             // Update timer (can be called by any player)

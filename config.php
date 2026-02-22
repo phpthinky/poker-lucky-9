@@ -5,9 +5,9 @@
  */
 
 define('DB_HOST', 'localhost');  // Usually 'localhost' for Hostinger
-define('DB_NAME', '');
-define('DB_USER', '');  // Replace with your MySQL username
-define('DB_PASS', '');  // Replace with your MySQL password
+define('DB_NAME', 'u506534245_gamedb');
+define('DB_USER', 'u506534245_game_u');  // Replace with your MySQL username
+define('DB_PASS', '2*.7xAcEmkBDC%/3');  // Replace with your MySQL password
 define('DB_CHARSET', 'utf8mb4');
 
 // Error reporting (set to 0 in production)
